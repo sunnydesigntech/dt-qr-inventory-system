@@ -80,21 +80,25 @@ function getInventoryData(params) {
     };
   }
 
+  const rows = getInventoryRowsForLocation_(room, loc);
+
+  return {
+    success: true,
+    rows: rows,
+    room: room,
+    loc: loc,
+    message: rows.length ? '' : 'No inventory records found for this location.'
+  };
+}
+
+function getInventoryRowsForLocation_(room, loc) {
   const sheet = getInventorySheet_();
   const values = sheet.getDataRange().getValues();
-  if (!values.length) {
-    return {
-      success: true,
-      rows: [],
-      room: room,
-      loc: loc,
-      message: 'No inventory data found in this sheet.'
-    };
-  }
+  if (!values.length) return [];
 
   const map = getColumnMap_(values[0], { requireQrLink: false });
-  const roomNeedle = room.toLowerCase();
-  const locNeedle = loc.toLowerCase();
+  const roomNeedle = String(room || '').toLowerCase();
+  const locNeedle = String(loc || '').toLowerCase();
   const rows = [];
 
   for (let i = 1; i < values.length; i++) {
@@ -119,13 +123,7 @@ function getInventoryData(params) {
     });
   }
 
-  return {
-    success: true,
-    rows: rows,
-    room: room,
-    loc: loc,
-    message: rows.length ? '' : 'No inventory records found for this location.'
-  };
+  return rows;
 }
 
 function saveInventoryUpdates(payload) {
@@ -165,9 +163,13 @@ function saveInventoryUpdates(payload) {
 }
 
 function getAllLocations() {
+  return { success: true, locations: getAllLocations_() };
+}
+
+function getAllLocations_() {
   const sheet = getInventorySheet_();
   const values = sheet.getDataRange().getValues();
-  if (!values.length) return { success: true, locations: [] };
+  if (!values.length) return [];
 
   const map = getColumnMap_(values[0], { requireQrLink: false });
   const seen = {};
@@ -190,7 +192,7 @@ function getAllLocations() {
     return a.room.localeCompare(b.room);
   });
 
-  return { success: true, locations: locations };
+  return locations;
 }
 
 function refreshQrLinks() {
@@ -253,10 +255,17 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('D&T Inventory')
     .addItem('Refresh QR Links', 'refreshQrLinks')
+    .addItem('Open Web App', 'openWebApp_')
     .addItem('Refresh QR Images (Optional)', 'refreshQrImages')
     .addSeparator()
     .addItem('Set WEB_APP_BASE_URL', 'promptSetWebAppBaseUrl_')
     .addToUi();
+}
+
+function openWebApp_() {
+  const ui = SpreadsheetApp.getUi();
+  const url = getWebAppBaseUrl_();
+  ui.alert('Open this URL in your browser:\n\n' + url);
 }
 
 function promptSetWebAppBaseUrl_() {
