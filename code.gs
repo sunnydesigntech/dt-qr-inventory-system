@@ -106,16 +106,15 @@ function getInventoryRowsForLocation_(room, loc) {
     const roomVal = String(r[map.room] || '').trim();
     const locVal = String(r[map.location] || '').trim();
     if (!roomVal || !locVal) continue;
+
     if (roomVal.toLowerCase() !== roomNeedle || locVal.toLowerCase() !== locNeedle) continue;
 
     const category = String(r[map.category] || '').trim();
     rows.push({
-      rowNumber: i + 1,
       sheetRow: i + 1,
       itemId: String(r[map.itemId] || '').trim(),
       itemName: String(r[map.itemName] || '').trim(),
       room: roomVal,
-      location: locVal,
       specificLocation: locVal,
       qty: toNonNegativeNumber_(r[map.qty]),
       category: category,
@@ -257,6 +256,7 @@ function onOpen() {
     .createMenu('D&T Inventory')
     .addItem('Refresh QR Links', 'refreshQrLinks')
     .addItem('Open Web App', 'openWebApp_')
+    .addItem('Refresh QR Images (Optional)', 'refreshQrImages')
     .addSeparator()
     .addItem('Set WEB_APP_BASE_URL', 'promptSetWebAppBaseUrl_')
     .addToUi();
@@ -265,7 +265,9 @@ function onOpen() {
 function openWebApp_() {
   const ui = SpreadsheetApp.getUi();
   const url = getWebAppBaseUrl_();
-  ui.alert('Open this URL in your browser:\\n\\n' + url);
+  ui.alert('Open this URL in your browser:
+
+' + url);
 }
 
 function promptSetWebAppBaseUrl_() {
