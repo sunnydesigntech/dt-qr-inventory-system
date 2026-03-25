@@ -132,6 +132,35 @@ function saveInventoryUpdates(payload) {
   };
 }
 
+function getAllLocations() {
+  const sheet = getInventorySheet_();
+  const values = sheet.getDataRange().getValues();
+  if (!values.length) return { success: true, locations: [] };
+
+  const map = getColumnMap_(values[0], { requireQrLink: false });
+  const seen = {};
+  const locations = [];
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const room = String(row[map.room] || '').trim();
+    const loc = String(row[map.location] || '').trim();
+    if (!room || !loc) continue;
+
+    const key = room.toLowerCase() + '||' + loc.toLowerCase();
+    if (seen[key]) continue;
+    seen[key] = true;
+    locations.push({ room: room, loc: loc });
+  }
+
+  locations.sort(function (a, b) {
+    if (a.room === b.room) return a.loc.localeCompare(b.loc);
+    return a.room.localeCompare(b.room);
+  });
+
+  return { success: true, locations: locations };
+}
+
 function refreshQrLinks() {
   const sheet = getInventorySheet_();
   const lastRow = sheet.getLastRow();
@@ -186,6 +215,24 @@ function setWebAppBaseUrl(url) {
   const value = String(url || '').trim();
   if (!value) throw new Error('Please provide a non-empty URL.');
   PropertiesService.getScriptProperties().setProperty(CONFIG.WEB_APP_URL_PROPERTY, value);
+}
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('D&T Inventory')
+    .addItem('Refresh QR Links', 'refreshQrLinks')
+    .addItem('Refresh QR Images (Optional)', 'refreshQrImages')
+    .addSeparator()
+    .addItem('Set WEB_APP_BASE_URL', 'promptSetWebAppBaseUrl_')
+    .addToUi();
+}
+
+function promptSetWebAppBaseUrl_() {
+  const ui = SpreadsheetApp.getUi();
+  const result = ui.prompt('Set WEB_APP_BASE_URL', 'Paste your deployed /exec web app URL:', ui.ButtonSet.OK_CANCEL);
+  if (result.getSelectedButton() !== ui.Button.OK) return;
+  setWebAppBaseUrl(result.getResponseText());
+  ui.alert('WEB_APP_BASE_URL saved.');
 }
 
 function getInventorySheet_() {
@@ -357,7 +404,7 @@ function buildPageHtml_(params) {
 
       if (!APP.room || !APP.loc) {
         hideLoading();
-        showNotice('Welcome. Scan a location QR code to load inventory for a room and storage location.', false);
+        loadLocationsLanding();
         return;
       }
 
@@ -398,6 +445,16 @@ function buildPageHtml_(params) {
         .getInventoryData({ room: APP.room, loc: APP.loc });
     }
 
+    function loadLocationsLanding() {
+      google.script.run
+        .withSuccessHandler(renderLocationsLanding)
+        .withFailureHandler(function (err) {
+          const msg = (err && err.message) || 'Could not load locations. Please contact the technician.';
+          showNotice(msg, true);
+        })
+        .getAllLocations();
+    }
+
     function renderRows(res) {
       hideLoading();
       const items = document.getElementById('items');
@@ -422,6 +479,52 @@ function buildPageHtml_(params) {
         card.className = 'p-4 border-b border-slate-100 last:border-b-0 ' + (row.isHazard ? 'bg-red-50' : 'bg-white');
         card.innerHTML = APP.mode === 'tech' ? techCardHtml(row, statusClass) : viewCardHtml(row, statusClass);
         items.appendChild(card);
+      });
+    }
+
+    function renderLocationsLanding(res) {
+      const items = document.getElementById('items');
+      items.innerHTML = '';
+      const list = (res && res.locations) ? res.locations : [];
+
+      const intro = document.createElement('div');
+      intro.className = 'p-4 border-b border-slate-100 bg-blue-50';
+      intro.innerHTML =
+        '<h3 class=\"font-semibold text-slate-900\">Choose a location</h3>' +
+        '<p class=\"text-sm text-slate-700 mt-1\">Scan a QR code or select a room/location below.</p>';
+      items.appendChild(intro);
+
+      if (!list.length) {
+        const empty = document.createElement('p');
+        empty.className = 'p-4 text-sm text-slate-500';
+        empty.textContent = 'No locations found in the inventory sheet.';
+        items.appendChild(empty);
+        return;
+      }
+
+      let currentRoom = '';
+      list.forEach(function (entry) {
+        if (entry.room !== currentRoom) {
+          currentRoom = entry.room;
+          const roomHeader = document.createElement('div');
+          roomHeader.className = 'px-4 py-2 bg-slate-50 border-y border-slate-100 text-xs font-semibold text-slate-600 tracking-wide';
+          roomHeader.textContent = 'ROOM ' + currentRoom;
+          items.appendChild(roomHeader);
+        }
+
+        const viewUrl = window.location.pathname + '?room=' + encodeURIComponent(entry.room) + '&loc=' + encodeURIComponent(entry.loc);
+        const techUrl = viewUrl + '&mode=tech';
+
+        const row = document.createElement('article');
+        row.className = 'p-4 border-b border-slate-100 last:border-b-0';
+        row.innerHTML =
+          '<p class=\"font-medium text-slate-900\">' + esc(entry.loc) + '</p>' +
+          '<p class=\"text-xs text-slate-500 mt-1\">Room: ' + esc(entry.room) + '</p>' +
+          '<div class=\"mt-3 flex gap-2\">' +
+            '<a class=\"text-xs px-3 py-2 rounded-md bg-slate-200 text-slate-800\" href=\"' + esc(viewUrl) + '\">Open View</a>' +
+            '<a class=\"text-xs px-3 py-2 rounded-md bg-indigo-600 text-white\" href=\"' + esc(techUrl) + '\">Open Tech</a>' +
+          '</div>';
+        items.appendChild(row);
       });
     }
 
