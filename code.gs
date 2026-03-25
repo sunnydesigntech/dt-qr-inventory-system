@@ -265,9 +265,7 @@ function onOpen() {
 function openWebApp_() {
   const ui = SpreadsheetApp.getUi();
   const url = getWebAppBaseUrl_();
-  ui.alert('Open this URL in your browser:
-
-' + url);
+  ui.alert('Open this URL in your browser:\n\n' + url);
 }
 
 function promptSetWebAppBaseUrl_() {
