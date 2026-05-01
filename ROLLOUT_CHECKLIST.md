@@ -1,6 +1,6 @@
 # D&T QR Inventory Rollout Checklist
 
-This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@12`; version `@11` is retained in Apps Script version history as the rollback fallback.
+This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@17`; version `@16` is retained in Apps Script version history as the add/remove workflow fallback.
 
 Production URL:
 
@@ -35,6 +35,8 @@ Students and teaching staff should use View Mode only. They should not use Updat
 7. Press Save updates.
 8. Confirm the green saved message appears and the unsaved count clears.
 9. If save fails, check the validation message, correct the row, and retry.
+10. Use Add item only for items physically confirmed in the current storage.
+11. Use Remove only after checking the confirmation details: item name, item ID, storage route, and current quantity.
 
 Placeholder storage rows exist only to make empty QR/location pages routable. Do not treat placeholder rows as stock items.
 
@@ -71,7 +73,7 @@ Source Excel workbooks are not read by the deployed app at runtime. They must be
 
 For Room 419A, the latest operational storage numbering comes from the `Location Code` column in `419A_Storage_Master`. QR labels and app routes should use those codes, for example `419A-FCU-01` or `419A-CAB-01`. Workbook `Storage ID` values are preserved as metadata, but the live 419A stocktake workflow should use Location Code as the code printed on storage labels.
 
-`Storage_Master` is generated from `Inventory` and is the operational storage map for rollout checks. `Audit_Log` is append-only and records Update Mode quantity/status changes when the optional audit columns and save flow are active.
+`Storage_Master` is generated from `Inventory` and is the operational storage map for rollout checks. It includes clickable `Open View` and `Open Update` links for each storage route. `Audit_Log` is append-only and records Update Mode quantity/status changes, add-item actions, and remove-item actions when the save flow is active.
 
 Do not directly edit:
 

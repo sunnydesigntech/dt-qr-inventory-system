@@ -10,6 +10,8 @@
   var localItems = [];
   var saveState = 'idle';
   var saveError = '';
+  var saveMessage = '';
+  var addFormOpen = false;
 
   function emptyAppData() {
     return {
@@ -97,6 +99,27 @@
     return '<span class="pill pill-hazard">' + icon('hazard', 12) + 'Chemical</span>';
   }
 
+  function routeIdentity(loc) {
+    if (!loc) return '';
+    return loc.routeLoc || loc.id || loc.code || loc.storageId || loc.specific || loc.label || '';
+  }
+
+  function secondaryIdentity(loc) {
+    if (!loc) return '';
+    var primary = routeIdentity(loc);
+    var parts = [];
+    if (loc.code && loc.code !== primary) parts.push('Location Code ' + loc.code);
+    if (loc.storageId && loc.storageId !== primary) parts.push('Workbook Storage ID ' + loc.storageId);
+    if (loc.storageLabel && loc.storageLabel !== loc.label) parts.push(loc.storageLabel);
+    return parts.join(' · ');
+  }
+
+  function routeIdentityLabel(loc) {
+    var routeId = routeIdentity(loc);
+    var is419ALocationCode = loc && loc.room === '419A' && /^419A-[A-Z0-9]+(?:-[A-Z0-9]+)*$/i.test(routeId);
+    return is419ALocationCode ? 'Location Code' : 'Storage route';
+  }
+
   function metric(label, value, sub, tone) {
     var toneClass = tone === 'rollout' ? 'border-teal-200 bg-[var(--vsa-teal-soft)]' : '';
     var labelClass = tone === 'rollout' ? 'text-teal-700' : 'text-slate-500';
@@ -148,6 +171,8 @@
     route = next;
     saveState = 'idle';
     saveError = '';
+    saveMessage = '';
+    addFormOpen = false;
     render();
   }
 
@@ -221,6 +246,13 @@
         icon('warn', 16, 'shrink-0 mt-0.5') +
         '<div><div class="font-semibold">WEB_APP_BASE_URL is not configured</div><div class="text-amber-800/90 mt-0.5">Browsing works, but QR generation and external printed links are disabled.</div></div></div>';
     }
+
+    html += '<div class="px-4 pt-3"><div class="route-principle">' +
+      '<div class="route-principle-icon">' + icon('scan', 18) + '</div>' +
+      '<div class="min-w-0"><div class="font-display text-[13px] font-semibold text-slate-900">One web app URL, many storage routes</div>' +
+      '<div class="text-[12px] text-slate-600 mt-0.5">Printed QR labels open View Mode first. Authorised staff enter Update inside the app.</div>' +
+      '<div class="route-example">/exec?room=419A&amp;loc=419A-FCU-01</div></div>' +
+      '</div></div>';
 
     html += '<div class="px-4 pt-4 space-y-2">';
     html += metric('419A rollout', r.pct + '%', r.ready + '/' + r.total + ' storages QR-ready', 'rollout');
@@ -320,14 +352,19 @@
     var cat = String(loc.id || '').toUpperCase();
     var iconName = loc.hazard ? 'flask' : (cat.indexOf('TOL') === 0 ? 'wrench' : (cat.indexOf('MAC') === 0 ? 'cpu' : 'box'));
     var iconTone = loc.hazard ? 'bg-red-50 text-red-700' : (cat.indexOf('TOL') === 0 ? 'bg-amber-50 text-amber-800' : (cat.indexOf('MAC') === 0 ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-700'));
+    var routeId = routeIdentity(loc);
+    var routeLabel = routeIdentityLabel(loc);
+    var secondary = secondaryIdentity(loc);
     var html = '<article class="card rounded-2xl overflow-hidden" data-location-key="' + esc(loc.key) + '">';
     html += '<button data-action="view-location" data-location-key="' + esc(loc.key) + '" class="w-full text-left px-3.5 py-3 flex items-start gap-3 hover:bg-slate-50">';
     html += '<div class="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ' + iconTone + '">' + icon(iconName, 18) + '</div>';
     html += '<div class="flex-1 min-w-0"><div class="flex items-center gap-1.5 flex-wrap"><h3 class="font-display text-[15px] font-semibold text-slate-900 truncate">' + esc(loc.label) + '</h3>' + (loc.hazard ? hazardPill() : '') + '</div>';
     if (loc.specific) html += '<div class="text-[12px] text-slate-500 mt-0.5 truncate">' + esc(loc.specific) + '</div>';
+    if (routeId) html += '<div class="identity-card mt-2"><span>' + esc(routeLabel) + '</span><strong>' + esc(routeId) + '</strong></div>';
+    if (secondary) html += '<div class="text-[10.5px] text-slate-500 mt-1 truncate">' + esc(secondary) + '</div>';
     html += '<div class="flex items-center gap-1.5 mt-1.5 flex-wrap">';
-    if (loc.id) html += '<span class="pill pill-neutral font-mono text-[10.5px]">' + esc(loc.id) + '</span>';
-    if (loc.code) html += '<span class="pill pill-blue font-mono text-[10.5px]">' + esc(loc.code) + '</span>';
+    if (loc.id && loc.id !== routeId) html += '<span class="pill pill-neutral font-mono text-[10.5px]">' + esc(loc.id) + '</span>';
+    if (loc.code && loc.code !== routeId) html += '<span class="pill pill-blue font-mono text-[10.5px]">' + esc(loc.code) + '</span>';
     if (loc.storageType) html += '<span class="pill pill-neutral">' + esc(loc.storageType) + '</span>';
     if (!loc.itemCount && !loc.items) html += '<span class="pill pill-neutral">Empty</span>';
     if (loc.qrReady) html += '<span class="pill pill-good">QR ready</span>';
@@ -349,7 +386,7 @@
       return Object.assign({}, item, { changed: !!item.changed, _orig: item._orig || { qty: item.qty, status: item.status } });
     });
 
-    if (!localItems.length) return renderEmptyLocation(loc, room);
+    if (!localItems.length && route.mode !== 'tech') return renderEmptyLocation(loc, room);
 
     var q = route.itemQ || '';
     var status = route.status || 'All';
@@ -375,6 +412,18 @@
       attention: localItems.filter(function (item) { return item.status !== 'Good'; }).length
     };
     var html = '<div class="min-h-full ' + (route.mode === 'tech' ? 'mode-tech-bg' : '') + '">' + renderContextStrip(loc, room);
+    if (route.mode === 'tech') {
+      html += '<div class="px-4 pt-3"><div class="update-mode-note">' +
+        '<div class="flex items-start gap-3"><div class="min-w-0 flex-1"><div class="font-semibold text-amber-950 flex items-center gap-1.5">' + icon('edit', 14) + 'Update Mode</div>' +
+        '<div class="text-[12px] text-amber-900/90 mt-1">Add items, remove items, or change quantity/status only for this storage. Every saved change writes to Inventory and Audit_Log.</div></div>' +
+        '<button data-action="open-add-item" class="btn btn-primary py-2 px-3 text-[12px] shrink-0">' + icon('plus', 14) + ' Add item</button></div>' +
+        '</div></div>';
+    } else if (loc.hazard) {
+      html += '<div class="px-4 pt-3"><div class="hazard-callout">' +
+        '<div class="font-semibold text-red-900 flex items-center gap-1.5">' + icon('hazard', 14) + 'Chemical storage</div>' +
+        '<div class="text-[12px] text-red-900/90 mt-1">Check safety note, SDS, PPE and teacher/technician guidance before handling chemicals.</div>' +
+        '</div></div>';
+    }
     html += '<div class="px-4 pt-3"><div class="flex items-center gap-1.5 flex-wrap text-[11.5px]"><span class="pill pill-neutral">' + stats.total + ' item' + (stats.total === 1 ? '' : 's') + '</span>';
     if (stats.hazard) html += '<span class="pill pill-hazard">' + stats.hazard + ' chemical</span>';
     if (stats.attention) html += '<span class="pill pill-low">' + stats.attention + ' need attention</span>';
@@ -387,6 +436,7 @@
     html += '<select id="categoryFilter" class="select py-2.5 text-[13px] w-full sm:w-[150px]">' + categoryOptions.map(function (option) {
       return '<option ' + (option === category ? 'selected' : '') + '>' + esc(option) + '</option>';
     }).join('') + '</select></div>';
+    if (route.mode === 'tech' && addFormOpen) html += renderAddItemForm();
     html += renderSaveNotice();
     html += '<div class="px-4 pt-3 ' + (route.mode === 'tech' ? 'pb-32' : 'pb-8') + ' space-y-2.5">';
     filtered.forEach(function (item) { html += renderItemCard(item); });
@@ -398,6 +448,8 @@
   }
 
   function renderContextStrip(loc, room) {
+    var routeId = routeIdentity(loc);
+    var secondary = secondaryIdentity(loc);
     return '<div class="px-4 pt-3 pb-3 border-b border-slate-200 sticky top-0 z-10 ' + (route.mode === 'tech' ? 'bg-amber-50/90 backdrop-blur' : 'bg-white/95 backdrop-blur') + '">' +
       '<div class="flex items-center gap-2"><button data-action="back" class="tap rounded-lg hover:bg-white flex items-center justify-center text-slate-700 -ml-2">' + icon('arrow-left', 20) + '</button>' +
       '<div class="flex-1 min-w-0"><div class="flex items-center gap-1.5"><span class="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-blue-700">' + esc(room.name || ('Room ' + loc.room)) + '</span>' +
@@ -405,11 +457,12 @@
       '<h1 class="font-display text-[18px] font-semibold text-slate-900 leading-tight truncate flex items-center gap-1.5">' + esc(loc.label) + (loc.hazard ? icon('hazard', 15, 'text-red-600') : '') + '</h1>' +
       (loc.specific ? '<div class="text-[12px] text-slate-500 mt-0.5 truncate">' + esc(loc.specific) + '</div>' : '') + '</div>' +
       modeBadge(route.mode) + '</div><div class="mt-2.5 flex flex-wrap items-center gap-1.5">' +
-      (loc.id ? '<span class="pill pill-neutral font-mono text-[10.5px]">ID ' + esc(loc.id) + '</span>' : '') +
-      (loc.code ? '<span class="pill pill-blue font-mono text-[10.5px]">' + esc(loc.code) + '</span>' : '') +
+      (routeId ? '<span class="route-badge"><span>' + esc(routeIdentityLabel(loc)) + '</span><strong>' + esc(routeId) + '</strong></span>' : '') +
       (loc.storageType ? '<span class="pill pill-neutral">' + esc(loc.storageType) + '</span>' : '') +
       '<button data-action="toggle-mode" class="ml-auto pill pill-blue hover:bg-blue-100" style="padding:5px 10px">' + icon(route.mode === 'view' ? 'edit' : 'search', 11) + (route.mode === 'view' ? 'Switch to Update' : 'Switch to View') + '</button>' +
-      '</div></div>';
+      '</div>' +
+      (secondary ? '<div class="mt-2 text-[11px] text-slate-500 truncate">' + esc(secondary) + '</div>' : '') +
+      '</div>';
   }
 
   function modeBadge(mode) {
@@ -446,24 +499,45 @@
     return '<div class="shrink-0 w-[160px] flex flex-col gap-2"><div><div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Quantity</div>' +
       '<div class="flex items-center gap-1"><button data-action="dec-qty" data-row="' + esc(item.sheetRow) + '" class="tap rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center justify-center">' + icon('minus', 16) + '</button>' +
       '<input data-action="qty" data-row="' + esc(item.sheetRow) + '" class="qty-input input flex-1 px-1" type="number" min="0" step="any" inputmode="decimal" value="' + esc(item.qty) + '"/>' +
-      '<button data-action="inc-qty" data-row="' + esc(item.sheetRow) + '" class="tap rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center justify-center">' + icon('plus', 16) + '</button></div></div>' +
+      '<button data-action="inc-qty" data-row="' + esc(item.sheetRow) + '" class="tap rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center justify-center">' + icon('plus', 16) + '</button></div><div class="mt-1 text-[10.5px] text-slate-500">Non-negative decimal allowed</div></div>' +
       '<div><div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Status</div><select data-action="status" data-row="' + esc(item.sheetRow) + '" class="select py-2 text-[13px]">' +
       ['Good', 'Low Stock', 'Missing', 'Needs Maintenance'].map(function (status) {
         return '<option ' + (status === item.status ? 'selected' : '') + '>' + esc(status) + '</option>';
-      }).join('') + '</select></div></div>';
+      }).join('') + '</select></div>' +
+      '<button data-action="remove-item" data-row="' + esc(item.sheetRow) + '" class="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[12px] font-semibold text-red-700 hover:bg-red-100 flex items-center justify-center gap-1.5">' + icon('warn', 13) + 'Remove</button></div>';
+  }
+
+  function renderAddItemForm() {
+    var storageText = [
+      route.loc && route.loc.room ? 'Room ' + route.loc.room : '',
+      routeIdentity(route.loc) ? routeIdentityLabel(route.loc) + ' ' + routeIdentity(route.loc) : '',
+      route.loc && route.loc.label ? route.loc.label : ''
+    ].filter(Boolean).join(' - ');
+    return '<div class="mx-4 mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-3.5">' +
+      '<div class="flex items-start justify-between gap-3"><div><div class="font-semibold text-blue-950 flex items-center gap-1.5">' + icon('plus', 14) + 'Add item to this storage</div><div class="text-[12px] text-blue-900/80 mt-0.5">This appends a new Inventory row using the current room and storage identity.</div></div><button data-action="cancel-add-item" class="tap rounded-lg hover:bg-blue-100 text-blue-800 px-2">Cancel</button></div>' +
+      '<div class="mt-2 rounded-xl bg-white/70 border border-blue-100 px-3 py-2 text-[12px] text-blue-950"><span class="font-semibold">Current storage:</span> ' + esc(storageText || 'selected storage') + '</div>' +
+      '<div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">' +
+      '<label class="text-[11px] font-semibold text-slate-600">Item name <span class="text-red-600">*</span><input id="newItemName" class="input mt-1" placeholder="e.g. Coping saw"/></label>' +
+      '<label class="text-[11px] font-semibold text-slate-600">Item ID <input id="newItemId" class="input mt-1" placeholder="Optional; auto-generated if blank"/></label>' +
+      '<label class="text-[11px] font-semibold text-slate-600">Quantity <span class="text-red-600">*</span><input id="newItemQty" class="input mt-1" type="number" min="0" step="any" inputmode="decimal" value="1"/></label>' +
+      '<label class="text-[11px] font-semibold text-slate-600">Unit <input id="newItemUnit" class="input mt-1" placeholder="pcs, sets, bottles"/></label>' +
+      '<label class="text-[11px] font-semibold text-slate-600">Category <span class="text-red-600">*</span><select id="newItemCategory" class="select mt-1"><option>Tools</option><option>Materials</option><option>Consumables</option><option>Electronics</option><option>Chemicals</option><option>Machine</option><option>Test</option><option>Other</option></select></label>' +
+      '<label class="text-[11px] font-semibold text-slate-600">Status <select id="newItemStatus" class="select mt-1"><option>Good</option><option>Low Stock</option><option>Missing</option><option>Needs Maintenance</option></select></label>' +
+      '<label class="text-[11px] font-semibold text-slate-600 sm:col-span-2">Remarks <input id="newItemRemarks" class="input mt-1" placeholder="Optional notes for this storage item"/></label>' +
+      '</div><div class="mt-3 flex justify-end"><button data-action="submit-add-item" class="btn btn-success">' + icon('save', 14) + ' Add to Inventory</button></div></div>';
   }
 
   function renderSaveNotice() {
     if (saveState === 'idle') return '';
     var cls = saveState === 'saving' ? 'bg-blue-50 border border-blue-200 text-blue-900' : (saveState === 'saved' ? 'bg-emerald-50 border border-emerald-200 text-emerald-900' : 'bg-red-50 border border-red-200 text-red-900');
-    var msg = saveState === 'saving' ? '<div class="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>Saving updates...' : (saveState === 'saved' ? icon('save', 15) + 'Saved. Inventory rows updated in Google Sheets.' : icon('warn', 15) + esc(saveError || 'Save failed. Check values and retry.'));
+    var msg = saveState === 'saving' ? '<div class="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>Saving updates...' : (saveState === 'saved' ? icon('save', 15) + esc(saveMessage || 'Saved. Inventory rows updated in Google Sheets and audit metadata recorded where available.') : icon('warn', 15) + esc(saveError || 'Save failed. Check highlighted values, confirm you are on the deployed app, then retry.'));
     return '<div class="mx-4 mt-3 rounded-xl px-3 py-2.5 text-[12.5px] flex items-center gap-2 ' + cls + '">' + msg + '</div>';
   }
 
   function renderSaveBar() {
     var changed = localItems.filter(function (item) { return item.changed; }).length;
-    return '<div class="save-bar"><div class="text-[12.5px]">' +
-      (changed ? '<span class="text-amber-800 font-semibold">' + changed + ' unsaved change' + (changed > 1 ? 's' : '') + '</span>' : '<span class="text-slate-500">No changes yet</span>') +
+    return '<div class="save-bar"><div class="text-[12.5px] min-w-0">' +
+      (changed ? '<div class="text-amber-800 font-semibold">' + changed + ' unsaved change' + (changed > 1 ? 's' : '') + '</div><div class="text-[11px] text-slate-500 mt-0.5">Changed rows only. Save writes to Inventory and Audit_Log.</div>' : '<div class="text-slate-600 font-medium">No changes yet</div><div class="text-[11px] text-slate-500 mt-0.5">Edit quantity/status, add an item, or remove an item from this storage.</div>') +
       '</div><button data-action="save" ' + (!changed || saveState === 'saving' ? 'disabled' : '') + ' class="btn ' + (changed ? 'btn-success' : 'btn-secondary opacity-60 cursor-not-allowed') + '">' + icon('save', 15) + ' Save updates</button></div>';
   }
 
@@ -486,8 +560,9 @@
       html += renderDiagnosticsPanel();
     } else {
       html += '<div class="card rounded-2xl p-4"><div class="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-slate-500">Data Readiness</div><div class="font-display text-[36px] font-semibold leading-none text-slate-900 mt-1">' + esc(r.score) + '<span class="text-[18px] text-slate-400">/100</span></div><div class="text-[12.5px] text-slate-500 mt-1">' + esc(r.errors) + ' critical errors - ' + esc(r.warnings) + ' warnings</div></div>' +
+        '<div class="pilot-gate ' + (Number(r.errors) ? 'is-blocked' : 'is-review') + '"><div class="font-semibold">' + (Number(r.errors) ? 'Rollout blocked by critical errors' : 'Pilot gate: critical errors clear') + '</div><div class="text-[12px] mt-1">' + (Number(r.errors) ? 'Fix critical errors in Inventory before QR printing or pilot use.' : 'Warnings still need owner decisions in Readiness_Warning_Triage before full rollout. Sample labels can proceed only after scan testing passes.') + '</div></div>' +
         '<div class="grid grid-cols-2 md:grid-cols-4 gap-2">' + issue(r.errors, 'Critical errors', 'red') + issue(r.warnings, 'Warnings', 'amber') + issue(r.missingQr, 'Missing QR links', 'amber') + issue(r.missingStorageId, '419A missing IDs', 'amber') + issue(r.invalidQty, 'Invalid qty', 'red') + issue(r.invalidStatus, 'Invalid status', 'red') + issue(r.duplicates, 'Duplicate items', 'amber') + issue((r.rollout419A && r.rollout419A.total) || 0, '419A storages', 'amber') + '</div>' +
-        '<div class="card rounded-2xl p-4 text-[12.5px] text-slate-600"><div class="font-semibold text-slate-900 mb-2">Next actions</div><p>Run this from Google Sheet menu: D&amp;T Inventory - Create Readiness Report. Fix critical errors before refreshing QR links or printing labels.</p></div>';
+        '<div class="card rounded-2xl p-4 text-[12.5px] text-slate-600"><div class="font-semibold text-slate-900 mb-2">Next actions</div><p>Run this from Google Sheet menu: D&amp;T Inventory - Create Readiness Report. Then use Readiness_Warning_Triage to assign warning owners and decisions. Print only sample QR labels until scans are verified.</p></div>';
       if (r.issueSample && r.issueSample.length) {
         html += '<div class="card rounded-2xl overflow-hidden"><div class="px-4 py-3 text-[12.5px] font-semibold text-slate-700 border-b border-slate-100">Issue sample</div>';
         r.issueSample.slice(0, 8).forEach(function (item) {
@@ -543,11 +618,12 @@
     }
     html += '<div class="px-4 pt-3 pb-2 space-y-2 text-[12px] text-slate-500">' +
       '<div>A4, 2 columns, peel-and-stick - ' + labels.length + ' storage/location labels</div>' +
-      '<div class="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-blue-900">All labels use the same Apps Script deployment URL. The QR code opens View Mode by adding route parameters for the selected room and storage; Update remains an in-app action for authorised staff.</div>' +
+      '<div class="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-blue-900"><div class="font-semibold">One deployment URL, many labels</div><div class="mt-0.5">Each QR uses the same Apps Script /exec URL plus room and storage route parameters. Labels open View Mode by default; Update remains an in-app action for authorised staff.</div></div>' +
       '</div><div class="px-4 pb-8"><div class="label-sheet rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-3">';
     labels.forEach(function (loc) {
+      var routeId = routeIdentity(loc);
       html += '<div class="qr-label"><div class="bg-white border border-slate-900 p-1.5 shrink-0" style="width:86px;height:86px">' + (loc.qrImageUrl ? '<img src="' + esc(loc.qrImageUrl) + '" alt="QR code" width="72" height="72"/>' : '<div class="qr-glyph w-full h-full"></div>') + '</div>' +
-        '<div class="min-w-0 flex-1"><div class="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">VSA D&amp;T - ' + esc(loc.room) + '</div><div class="font-display text-[14px] font-semibold text-slate-900 truncate mt-0.5">' + esc(loc.label) + '</div><div class="text-[11px] text-slate-500 truncate">' + esc(loc.specific || '') + '</div>' + (loc.id ? '<div class="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-900 text-white text-[10px] font-mono rounded">' + esc(loc.id) + '</div>' : '') + (loc.hazard ? '<div class="mt-1 text-[10px] font-semibold text-red-700">HAZARD STORAGE - CHECK SAFETY FIRST</div>' : '') + '<div class="mt-1.5">' + (loc.qrReady ? '<span class="pill pill-good">QR ready</span>' : '<span class="pill pill-low">QR link missing</span>') + '</div><div class="text-[10px] text-slate-500 mt-1.5 truncate">View: ' + esc(loc.absoluteViewUrl || loc.viewUrl || '') + '</div><div class="text-[10px] text-slate-500 truncate">Update: ' + esc(loc.absoluteTechUrl || loc.techUrl || '') + '</div></div></div>';
+        '<div class="min-w-0 flex-1"><div class="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">VSA D&amp;T - ' + esc(loc.room) + '</div><div class="font-display text-[14px] font-semibold text-slate-900 truncate mt-0.5">' + esc(loc.label) + '</div><div class="text-[11px] text-slate-500 truncate">' + esc(loc.specific || '') + '</div>' + (routeId ? '<div class="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-900 text-white text-[10px] font-mono rounded">' + esc(routeId) + '</div>' : '') + (loc.hazard ? '<div class="mt-1 text-[10px] font-semibold text-red-700">HAZARD STORAGE - CHECK SAFETY FIRST</div>' : '') + '<div class="mt-1.5">' + (loc.qrReady ? '<span class="pill pill-good">View QR ready</span>' : '<span class="pill pill-low">QR link missing</span>') + '</div><div class="text-[10px] text-slate-500 mt-1.5 truncate">View: ' + esc(loc.absoluteViewUrl || loc.viewUrl || '') + '</div><div class="text-[10px] text-slate-500 truncate">Update: ' + esc(loc.absoluteTechUrl || loc.techUrl || '') + '</div></div></div>';
     });
     if (!labels.length) html += '<div class="col-span-2 text-center py-12 text-[13px] text-slate-500">No storage locations available for labels yet.</div>';
     html += '</div></div>';
@@ -614,6 +690,7 @@
         html += '<article class="card rounded-2xl p-3.5"><div class="flex items-start justify-between gap-2"><div class="min-w-0 flex-1">' +
           '<div class="flex items-center gap-1.5 flex-wrap"><span class="pill pill-blue">' + esc(event.action || 'Update') + '</span><span class="font-mono text-[11px] text-slate-500">' + esc(event.ts || '-') + '</span></div>' +
           '<div class="mt-1.5 text-[13px] text-slate-800"><span class="font-semibold">' + esc(event.user || 'unknown user') + '</span><span class="text-slate-500"> - ' + esc(event.room || '-') + ' / ' + esc(event.storage || '-') + (event.item && event.item !== '-' ? ' - ' + esc(event.item) : '') + '</span></div>';
+        if (event.routeLoc) html += '<div class="mt-1 text-[11px] text-slate-500 font-mono">Route: ' + esc(event.routeLoc) + '</div>';
         if (qtyChanged || statusChanged) {
           html += '<div class="mt-1.5 text-[12px] text-slate-700 flex flex-wrap gap-x-3 gap-y-0.5 font-mono">';
           if (qtyChanged) html += '<span><span class="text-slate-400">qty</span> ' + esc(event.oldQty || '-') + ' -> <span class="font-semibold">' + esc(event.newQty || '-') + '</span></span>';
@@ -797,6 +874,17 @@
     }
     else if (action === 'back') goLanding();
     else if (action === 'toggle-mode') toggleMode();
+    else if (action === 'open-add-item') {
+      addFormOpen = true;
+      render();
+    } else if (action === 'cancel-add-item') {
+      addFormOpen = false;
+      render();
+    } else if (action === 'submit-add-item') {
+      addInventoryItem();
+    } else if (action === 'remove-item') {
+      removeInventoryItem(el.getAttribute('data-row'));
+    }
     else if (action === 'view-location' || action === 'tech-location') {
       var loc = findLocationByKey(el.getAttribute('data-location-key'));
       if (loc) goLocation(loc, action === 'tech-location' ? 'tech' : 'view');
@@ -808,6 +896,43 @@
     } else if (action === 'save') {
       saveUpdates();
     }
+  }
+
+  function mapServerItem(r) {
+    return {
+      sheetRow: r.sheetRow,
+      id: r.itemId,
+      name: r.itemName,
+      category: r.category,
+      qty: r.qty,
+      unit: r.unit,
+      status: r.status,
+      remarks: r.remarks,
+      safetyNote: r.safetyNote,
+      reorderLevel: r.reorderLevel,
+      supplier: r.supplier,
+      purchaseLink: r.purchaseLink,
+      assetValue: r.assetValue,
+      maintenanceDue: r.maintenanceDue,
+      sdsLink: r.sdsLink,
+      hazard: r.isHazard,
+      _orig: { qty: r.qty, status: r.status },
+      changed: false
+    };
+  }
+
+  function applyServerRows(rows) {
+    var mapped = (rows || []).map(mapServerItem);
+    appData.items[route.loc.key] = mapped;
+    localItems = mapped.map(function (item) {
+      return Object.assign({}, item, { _orig: item._orig || { qty: item.qty, status: item.status } });
+    });
+    route.loc.itemCount = mapped.length;
+    route.loc.items = route.loc.itemCount;
+    route.loc.chemicalCount = mapped.filter(function (item) { return item.hazard; }).length;
+    route.loc.attentionCount = mapped.filter(function (item) { return item.status !== 'Good'; }).length;
+    route.loc.attention = route.loc.attentionCount;
+    route.loc.hazard = route.loc.chemicalCount > 0;
   }
 
   function findLocalItem(row) {
@@ -868,36 +993,9 @@
     render();
     google.script.run
       .withSuccessHandler(function (res) {
-        var rows = (res && res.rows) || [];
-        appData.items[route.loc.key] = rows.map(function (r) {
-          return {
-            sheetRow: r.sheetRow,
-            id: r.itemId,
-            name: r.itemName,
-            category: r.category,
-            qty: r.qty,
-            unit: r.unit,
-            status: r.status,
-            remarks: r.remarks,
-            safetyNote: r.safetyNote,
-            reorderLevel: r.reorderLevel,
-            supplier: r.supplier,
-            purchaseLink: r.purchaseLink,
-            assetValue: r.assetValue,
-            maintenanceDue: r.maintenanceDue,
-            sdsLink: r.sdsLink,
-            hazard: r.isHazard,
-            _orig: { qty: r.qty, status: r.status },
-            changed: false
-          };
-        });
-        route.loc.itemCount = appData.items[route.loc.key].length;
-        route.loc.items = route.loc.itemCount;
-        route.loc.chemicalCount = appData.items[route.loc.key].filter(function (item) { return item.hazard; }).length;
-        route.loc.attentionCount = appData.items[route.loc.key].filter(function (item) { return item.status !== 'Good'; }).length;
-        route.loc.attention = route.loc.attentionCount;
-        route.loc.hazard = route.loc.chemicalCount > 0;
+        applyServerRows((res && res.rows) || []);
         saveState = 'saved';
+        saveMessage = 'Saved. Updated ' + ((res && res.updatedCount) || updates.length) + ' item(s) and recorded Audit_Log rows for actual changes.';
         render();
       })
       .withFailureHandler(function (err) {
@@ -906,6 +1004,104 @@
         render();
       })
       .saveInventoryUpdates({ room: route.loc.room, loc: route.loc.routeLoc || route.loc.id, updates: updates });
+  }
+
+  function addInventoryItem() {
+    if (!(window.google && google.script && google.script.run)) {
+      saveState = 'error';
+      saveError = 'Save bridge unavailable. Open the deployed /exec URL to add items.';
+      render();
+      return;
+    }
+    var item = {
+      itemId: textValue(document.getElementById('newItemId') && document.getElementById('newItemId').value),
+      itemName: textValue(document.getElementById('newItemName') && document.getElementById('newItemName').value),
+      qty: textValue(document.getElementById('newItemQty') && document.getElementById('newItemQty').value),
+      unit: textValue(document.getElementById('newItemUnit') && document.getElementById('newItemUnit').value),
+      category: textValue(document.getElementById('newItemCategory') && document.getElementById('newItemCategory').value),
+      status: textValue(document.getElementById('newItemStatus') && document.getElementById('newItemStatus').value),
+      remarks: textValue(document.getElementById('newItemRemarks') && document.getElementById('newItemRemarks').value)
+    };
+    if (!item.itemName) {
+      saveState = 'error';
+      saveError = 'Enter an item name before adding it to Inventory.';
+      addFormOpen = true;
+      render();
+      return;
+    }
+    if (item.qty === '' || !Number.isFinite(Number(item.qty)) || Number(item.qty) < 0) {
+      saveState = 'error';
+      saveError = 'Enter a non-negative quantity before adding the item.';
+      addFormOpen = true;
+      render();
+      return;
+    }
+    saveState = 'saving';
+    saveError = '';
+    saveMessage = '';
+    render();
+    google.script.run
+      .withSuccessHandler(function (res) {
+        applyServerRows((res && res.rows) || []);
+        addFormOpen = false;
+        saveState = 'saved';
+        saveMessage = 'Item added to this storage and recorded in Audit_Log.';
+        render();
+      })
+      .withFailureHandler(function (err) {
+        addFormOpen = true;
+        saveState = 'error';
+        saveError = (err && err.message) || 'Add item failed. Check the fields and retry.';
+        render();
+      })
+      .addInventoryItemToLocation({ room: route.loc.room, loc: route.loc.routeLoc || route.loc.id, item: item });
+  }
+
+  function removeInventoryItem(row) {
+    var item = findLocalItem(row);
+    if (!item) return;
+    var storageText = [
+      route.loc && route.loc.room ? 'Room ' + route.loc.room : '',
+      routeIdentity(route.loc) ? routeIdentityLabel(route.loc) + ' ' + routeIdentity(route.loc) : '',
+      route.loc && route.loc.label ? route.loc.label : ''
+    ].filter(Boolean).join(' - ');
+    var warning = localItems.length <= 1 ? '\n\nThis is the last visible item in this storage. The system will preserve the storage route with a placeholder row after removal.' : '';
+    var ok = window.confirm([
+      'Remove this item from Inventory?',
+      '',
+      'Item: ' + (item.name || '-'),
+      'Item ID: ' + (item.id || '-'),
+      'Storage: ' + (storageText || 'selected storage'),
+      'Current quantity: ' + (item.qty || '0') + (item.unit ? ' ' + item.unit : ''),
+      '',
+      'This deletes the Inventory row and records REMOVE in Audit_Log.' + warning,
+      '',
+      'Continue only if you are physically checking this storage.'
+    ].join('\n'));
+    if (!ok) return;
+    if (!(window.google && google.script && google.script.run)) {
+      saveState = 'error';
+      saveError = 'Save bridge unavailable. Open the deployed /exec URL to remove items.';
+      render();
+      return;
+    }
+    saveState = 'saving';
+    saveError = '';
+    saveMessage = '';
+    render();
+    google.script.run
+      .withSuccessHandler(function (res) {
+        applyServerRows((res && res.rows) || []);
+        saveState = 'saved';
+        saveMessage = 'Item removed from this storage and recorded in Audit_Log.';
+        render();
+      })
+      .withFailureHandler(function (err) {
+        saveState = 'error';
+        saveError = (err && err.message) || 'Remove item failed. Refresh and retry.';
+        render();
+      })
+      .removeInventoryItemFromLocation({ room: route.loc.room, loc: route.loc.routeLoc || route.loc.id, sheetRow: Number(row) });
   }
 
   try {

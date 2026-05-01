@@ -46,7 +46,7 @@ AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ
 Current deployed version:
 
 ```text
-@12 - 419A location-code database workflow
+@17 - real-use inventory workflow polish
 ```
 
 Current web app URL:
@@ -205,9 +205,10 @@ The app remains compatible with the original 8-column sheet. The extended column
 ## Generated Operations Sheets
 
 - `Storage_Master`: one row per unique storage/location, generated from `Inventory`.
+- `Storage_Master` includes clickable `Open View` and `Open Update` links, QR link/image columns, item/chemical/attention counts, and placeholder-only status so it can be used as an operational navigation sheet.
 - `QR_Labels`: printable QR label rows with View URL, Update URL, QR formula, and hazard label text where relevant.
 - `Inventory_Readiness_Report`: critical errors, warnings, QR readiness, 419A rollout status, duplicate checks, chemical safety note checks, reorder-level checks, and maintenance-detail checks.
-- `Audit_Log`: appended automatically when Update Mode saves quantity/status changes.
+- `Audit_Log`: appended automatically when Update Mode saves quantity/status changes, adds a new item, or removes an item. New rows include the active route/location code where available.
 
 ## Bound Sheet Admin Script
 
@@ -292,6 +293,24 @@ Post-deploy smoke tests:
 7. Run `Build QR Label Sheet` and spot-check a generated QR image/link.
 
 ## Release Log
+
+### 2026-05-01 20:53 HKT
+
+- Version: `@17`
+- Deployment ID: `AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ`
+- Deployment URL: `https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec`
+- Summary: real-use inventory workflow polish. `Storage_Master` now acts as a clickable operations map with `Open View` and `Open Update` links, QR image support, item/chemical/attention counts, and placeholder-only status. Update Mode add/remove flow now shows current storage identity, safer remove confirmation, Test category support, and route/location-code metadata in new `Audit_Log` rows.
+- Rollback note: version `@16` remains the fallback for the first add/remove implementation.
+- Remaining gate: complete physical sample QR label phone scans and keep full 419A rollout paused until warning decisions and unmatched-row governance are accepted by HoD/technician.
+
+### 2026-05-01 18:36 HKT
+
+- Version: `@15`
+- Deployment ID: `AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ`
+- Deployment URL: `https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec`
+- Summary: applied the approved Figma UI/UX direction to the live dashboard: clearer one-deployment/many-storage route model, stronger 419A Location Code prominence, View-first QR label copy, clearer Update save/audit language, chemical storage callouts, readiness gate copy, and wider desktop dashboard layout.
+- Rollback note: version `@13` remains the stable pilot-readiness fallback; version `@14` was superseded by `@15` after tightening legacy 419A route wording.
+- Remaining gate: physical sample QR label scan evidence and final warning/unmatched-row decisions are still required before full 419A rollout.
 
 ### 2026-05-01 14:50 HKT
 

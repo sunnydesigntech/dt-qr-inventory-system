@@ -93,6 +93,7 @@ function DTInv_onOpen_(e) {
     .addItem('Prepare App Columns', 'DTInv_menuPrepareAppColumns')
     .addItem('Build Storage Master', 'DTInv_menuBuildStorageMasterSheet')
     .addItem('Create Readiness Report', 'DTInv_menuCreateReadinessReport')
+    .addItem('Create Warning Triage Board', 'DTInv_menuCreateWarningTriageBoard')
     .addItem('Refresh QR Links', 'DTInv_menuRefreshQrLinks')
     .addItem('Build QR Label Sheet', 'DTInv_menuBuildQrLabelSheet')
     .addItem('Refresh QR Images (Optional)', 'DTInv_menuRefreshQrImages')
@@ -100,6 +101,8 @@ function DTInv_onOpen_(e) {
     .addItem('Import 419A Storage Master', 'DTInv_promptImport419AStorageMaster')
     .addItem('Import 419A App Load Ready', 'DTInv_promptImport419AReady')
     .addItem('419A Readiness Summary', 'DTInv_menu419AReadinessSummary')
+    .addItem('Prepare 419A Unmatched Review', 'DTInv_menuPrepareUnmatchedReview')
+    .addItem('Create Pilot Test Log', 'DTInv_menuCreatePilotTestLog')
     .addSeparator()
     .addItem('Open Web App', 'DTInv_menuOpenWebApp')
     .addItem('Set WEB_APP_BASE_URL', 'DTInv_promptSetWebAppBaseUrl')
@@ -170,6 +173,22 @@ function DTInv_menuCreateReadinessReport() {
   }
 }
 
+function DTInv_menuCreateWarningTriageBoard() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var result = DTInv_createWarningTriageBoard_();
+    ui.alert(
+      'Warning Triage Board Ready',
+      'Sheet: ' + result.sheetName +
+        '\nWarnings/errors listed: ' + result.issueCount +
+        '\nFix Now rows: ' + result.fixNowCount,
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('Warning Triage Board Failed', DTInv_errorMessage_(err), ui.ButtonSet.OK);
+  }
+}
+
 function DTInv_menuRefreshQrLinks() {
   var ui = SpreadsheetApp.getUi();
   try {
@@ -224,6 +243,38 @@ function DTInv_menu419AReadinessSummary() {
     ui.alert('419A Readiness Summary', lines.join('\n'), ui.ButtonSet.OK);
   } catch (err) {
     ui.alert('419A Readiness Summary Failed', DTInv_errorMessage_(err), ui.ButtonSet.OK);
+  }
+}
+
+function DTInv_menuPrepareUnmatchedReview() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var result = DTInv_prepareUnmatchedReviewSheet_();
+    ui.alert(
+      '419A Unmatched Review Ready',
+      'Sheet: ' + result.sheetName +
+        '\nReview rows: ' + result.reviewRows +
+        '\nReviewed rows must be assigned before import.',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('419A Unmatched Review Failed', DTInv_errorMessage_(err), ui.ButtonSet.OK);
+  }
+}
+
+function DTInv_menuCreatePilotTestLog() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var result = DTInv_createPilotTestLog_();
+    ui.alert(
+      'Pilot Test Log Ready',
+      'Sheet: ' + result.sheetName +
+        '\nTemplate rows: ' + result.templateRows +
+        '\nUse this before printing/applying all labels.',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('Pilot Test Log Failed', DTInv_errorMessage_(err), ui.ButtonSet.OK);
   }
 }
 
@@ -411,32 +462,69 @@ function DTInv_buildStorageMasterSheet_() {
   var baseUrl = DTInv_getWebAppBaseUrl_();
   var locations = DTInv_collectLocations_(values, map, baseUrl);
   var sheet = ss.getSheetByName(DTINV_CONFIG.STORAGE_MASTER_SHEET_NAME) || ss.insertSheet(DTINV_CONFIG.STORAGE_MASTER_SHEET_NAME);
-  var headers = ['Storage ID', 'Room', 'Storage Label', 'Specific Location', 'Location Code', 'Storage Type', 'QR Link', 'QR Image', 'Status', 'Notes'];
+  var headers = [
+    'Room',
+    'Location Code',
+    'Specific Location',
+    'Storage ID',
+    'Storage Label',
+    'Storage Type',
+    'Open View',
+    'Open Update',
+    'QR Link',
+    'QR Image',
+    'Item Count',
+    'Chemical Count',
+    'Attention Count',
+    'Placeholder Only',
+    'Status / Notes'
+  ];
   var rows = locations.map(function (loc, index) {
     var rowNumber = index + 2;
     var storageType = loc.storageType || DTInv_inferStorageType_(loc);
     var status = loc.attentionCount ? 'Needs Attention' : 'Good';
-    return [
-      loc.storageId,
-      loc.room,
-      loc.storageLabel || loc.specificLocation,
-      loc.specificLocation,
-      loc.locationCode,
-      storageType,
-      loc.viewUrl,
-      '=IMAGE("https://quickchart.io/qr?text="&ENCODEURL(G' + rowNumber + ')&"&size=180")',
+    var placeholderOnly = !loc.itemCount;
+    var notes = [
       status,
-      loc.itemCount + ' item row(s); ' + loc.chemicalCount + ' chemical row(s); ' + loc.attentionCount + ' attention row(s)'
+      loc.itemCount + ' item row(s)',
+      loc.chemicalCount + ' chemical row(s)',
+      loc.attentionCount + ' attention row(s)',
+      placeholderOnly ? 'placeholder-only route' : ''
+    ].filter(Boolean).join('; ');
+    return [
+      loc.room,
+      loc.locationCode,
+      loc.specificLocation,
+      loc.storageId,
+      loc.storageLabel || loc.specificLocation,
+      storageType,
+      loc.viewUrl ? DTInv_hyperlinkFormula_(loc.viewUrl, 'Open View') : '',
+      loc.techUrl ? DTInv_hyperlinkFormula_(loc.techUrl, 'Open Update') : '',
+      loc.viewUrl,
+      loc.viewUrl ? '=IMAGE("https://quickchart.io/qr?text="&ENCODEURL(I' + rowNumber + ')&"&size=180")' : '',
+      loc.itemCount,
+      loc.chemicalCount,
+      loc.attentionCount,
+      placeholderOnly ? 'Yes' : 'No',
+      notes
     ];
   });
   sheet.clear();
+  DTInv_resetSheetRules_(sheet);
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   if (rows.length) {
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    sheet.getRange(2, 7, rows.length, 1).setFormulas(rows.map(function (row) { return [row[6]]; }));
     sheet.getRange(2, 8, rows.length, 1).setFormulas(rows.map(function (row) { return [row[7]]; }));
+    sheet.getRange(2, 10, rows.length, 1).setFormulas(rows.map(function (row) { return [row[9]]; }));
   }
   sheet.setFrozenRows(1);
   sheet.autoResizeColumns(1, headers.length);
+  try {
+    sheet.getRange(1, 1, Math.max(rows.length + 1, 2), headers.length).createFilter();
+  } catch (err) {
+    // Filter creation is best-effort only.
+  }
   return { sheetName: sheet.getName(), storageCount: rows.length };
 }
 
@@ -449,6 +537,7 @@ function DTInv_buildQrLabelSheet_() {
   var labels = DTInv_collectLocations_(values, map, baseUrl);
   var sheet = ss.getSheetByName(DTINV_CONFIG.QR_LABEL_SHEET_NAME) || ss.insertSheet(DTINV_CONFIG.QR_LABEL_SHEET_NAME);
   sheet.clear();
+  DTInv_resetSheetRules_(sheet);
   var headers = ['Room', 'Specific Location', 'Storage ID', 'Storage Label', 'Location Code', 'View URL', 'Update URL', 'QR Image Formula', 'Print Label Text'];
   var rows = labels.map(function (loc, index) {
     var rowNumber = index + 2;
@@ -831,7 +920,7 @@ function DTInv_getDiagnostics_() {
     inventorySheetName: sheet.getName(),
     dataRows: Math.max(sheet.getLastRow() - 1, 0),
     webAppBaseUrl: webUrl,
-    webAppBaseUrlSource: PropertiesService.getScriptProperties().getProperty(DTINV_CONFIG.WEB_APP_BASE_URL_PROPERTY) ? 'Script Property' : 'default @12',
+    webAppBaseUrlSource: PropertiesService.getScriptProperties().getProperty(DTINV_CONFIG.WEB_APP_BASE_URL_PROPERTY) ? 'Script Property' : 'default deployment URL',
     missingRequired: DTInv_missingColumns_(map, DTINV_CONFIG.REQUIRED_COLUMNS),
     missingOptional: DTInv_missingColumns_(map, DTINV_CONFIG.OPTIONAL_COLUMNS)
   };
@@ -984,6 +1073,528 @@ function DTInv_inferStorageType_(loc) {
   return 'Storage';
 }
 
+function DTInv_resetSheetRules_(sheet) {
+  try {
+    var filter = sheet.getFilter();
+    if (filter) filter.remove();
+  } catch (err) {
+    // Existing filters are best-effort cleanup only; rebuilding can continue.
+  }
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).clearDataValidations();
+  sheet.setConditionalFormatRules([]);
+}
+
+function DTInv_createWarningTriageBoard_() {
+  var ss = DTInv_getSpreadsheet_();
+  var report = ss.getSheetByName(DTINV_CONFIG.READINESS_SHEET_NAME);
+  if (!report) {
+    DTInv_createReadinessReport_();
+    report = ss.getSheetByName(DTINV_CONFIG.READINESS_SHEET_NAME);
+  }
+  if (!report) throw new Error('Inventory_Readiness_Report does not exist. Run Create Readiness Report first.');
+
+  var inventory = DTInv_getInventorySheet_();
+  var inventoryValues = inventory.getDataRange().getValues();
+  var inventoryMap = DTInv_getRequiredMap_(inventoryValues[0]);
+  var reportValues = report.getDataRange().getValues();
+  var rows = [];
+  var fixNowCount = 0;
+
+  for (var i = 0; i < reportValues.length; i++) {
+    var source = reportValues[i];
+    var severity = DTInv_clean_(source[0]);
+    if (severity !== 'WARN' && severity !== 'ERROR') continue;
+    var sourceRow = DTInv_clean_(source[1]);
+    var issueType = DTInv_clean_(source[2]);
+    var triage = DTInv_triageForIssue_(issueType);
+    var inventoryRow = /^[0-9]+$/.test(sourceRow) ? inventoryValues[Number(sourceRow) - 1] : null;
+    var locationCode = inventoryRow ? DTInv_optional_(inventoryRow, inventoryMap.locationCode) : '';
+    var idPrefix = severity === 'ERROR' ? 'E' : 'W';
+    var warningId = idPrefix + '-' + DTInv_padNumber_(rows.length + 1, 3);
+    if (triage.status === 'Fix Now') fixNowCount += 1;
+    rows.push([
+      warningId,
+      sourceRow,
+      DTInv_clean_(source[4]),
+      locationCode,
+      DTInv_clean_(source[6]),
+      DTInv_clean_(source[7]),
+      issueType,
+      triage.group,
+      DTInv_clean_(source[3]),
+      severity,
+      triage.owner,
+      triage.decision,
+      triage.action,
+      '',
+      triage.status,
+      ''
+    ]);
+  }
+
+  var sheet = ss.getSheetByName('Readiness_Warning_Triage') || ss.insertSheet('Readiness_Warning_Triage');
+  sheet.clear();
+  DTInv_resetSheetRules_(sheet);
+  var headers = [
+    'Warning ID',
+    'Source report row',
+    'Room',
+    'Location Code',
+    'Item ID',
+    'Item Name',
+    'Warning Type',
+    'Group',
+    'Current Message',
+    'Severity',
+    'Owner',
+    'Decision',
+    'Action Needed',
+    'Due / Review Date',
+    'Status',
+    'Notes'
+  ];
+  var headerRow = 9;
+  var dataStartRow = headerRow + 1;
+  var rowCount = Math.max(rows.length, 1);
+  var summaryLabels = [
+    'Total warnings',
+    'Unassigned owner',
+    'Fix Now',
+    'Defer to Pilot',
+    'Needs HoD Decision',
+    'Needs Technician Check',
+    'Accepted Risk',
+    'Resolved'
+  ];
+  var summaryFormulas = [
+    '=COUNTA(A' + dataStartRow + ':A)',
+    '=COUNTIFS(A' + dataStartRow + ':A,"<>",K' + dataStartRow + ':K,"")',
+    '=COUNTIF(O' + dataStartRow + ':O,"Fix Now")',
+    '=COUNTIF(O' + dataStartRow + ':O,"Defer to Pilot")',
+    '=COUNTIF(O' + dataStartRow + ':O,"Needs HoD Decision")',
+    '=COUNTIF(O' + dataStartRow + ':O,"Needs Technician Check")',
+    '=COUNTIF(O' + dataStartRow + ':O,"Accepted Risk")',
+    '=COUNTIF(O' + dataStartRow + ':O,"Resolved")'
+  ];
+
+  sheet.getRange(1, 1).setValue('Readiness Warning Triage');
+  sheet.getRange(2, 1).setValue('Use this board to assign, accept, or schedule the 419A pilot warnings. Do not print all labels until safety-critical warning decisions are complete.');
+  sheet.getRange(3, 1).setValue('Minimum pilot standard: every warning has an owner and decision; chemical/SDS, low-stock, storage-code, and maintenance warnings have explicit actions.');
+  sheet.getRange(4, 1, 1, summaryLabels.length).setValues([summaryLabels]);
+  sheet.getRange(5, 1, 1, summaryFormulas.length).setFormulas([summaryFormulas]);
+  sheet.getRange(7, 1).setValue('Allowed statuses: Fix Now, Defer to Pilot, Needs HoD Decision, Needs Technician Check, Accepted Risk, Resolved');
+  sheet.getRange(headerRow, 1, 1, headers.length).setValues([headers]);
+  if (rows.length) sheet.getRange(dataStartRow, 1, rows.length, headers.length).setValues(rows);
+  sheet.setFrozenRows(headerRow);
+  sheet.getRange(1, 1, 1, headers.length).mergeAcross().setFontWeight('bold').setFontSize(14).setBackground('#fef3c7');
+  sheet.getRange(2, 1, 2, headers.length).mergeAcross().setWrap(true).setBackground('#fff7ed');
+  sheet.getRange(4, 1, 2, summaryLabels.length).setFontWeight('bold').setBackground('#f8fafc');
+  sheet.getRange(7, 1, 1, headers.length).mergeAcross().setWrap(true).setBackground('#eef2ff');
+  sheet.getRange(headerRow, 1, 1, headers.length).setFontWeight('bold').setBackground('#e8f0fe');
+  sheet.getRange(dataStartRow, 15, rowCount, 1).setDataValidation(DTInv_listValidation_([
+    'Fix Now',
+    'Defer to Pilot',
+    'Needs HoD Decision',
+    'Needs Technician Check',
+    'Accepted Risk',
+    'Resolved'
+  ]));
+  sheet.getRange(dataStartRow, 12, rowCount, 1).setDataValidation(DTInv_listValidation_([
+    'Fix before full rollout',
+    'Defer to pilot',
+    'Needs HoD decision',
+    'Needs technician check',
+    'Accepted risk',
+    'Resolved'
+  ]));
+  var filter = sheet.getFilter();
+  if (filter) filter.remove();
+  sheet.getRange(headerRow, 1, rowCount + 1, headers.length).createFilter();
+  var statusRange = sheet.getRange(dataStartRow, 15, rowCount, 1);
+  var decisionRange = sheet.getRange(dataStartRow, 12, rowCount, 1);
+  sheet.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Fix Now').setBackground('#fecaca').setFontColor('#7f1d1d').setRanges([statusRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Needs HoD Decision').setBackground('#dbeafe').setFontColor('#1e3a8a').setRanges([statusRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Needs Technician Check').setBackground('#fde68a').setFontColor('#78350f').setRanges([statusRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Accepted Risk').setBackground('#e5e7eb').setFontColor('#374151').setRanges([statusRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Resolved').setBackground('#bbf7d0').setFontColor('#14532d').setRanges([statusRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Fix before full rollout').setBackground('#fecaca').setRanges([decisionRange]).build()
+  ]);
+  sheet.autoResizeColumns(1, headers.length);
+  sheet.getRange(1, 1, Math.max(sheet.getLastRow(), dataStartRow), headers.length).setWrap(true);
+  return { sheetName: sheet.getName(), issueCount: rows.length, fixNowCount: fixNowCount };
+}
+
+function DTInv_prepareUnmatchedReviewSheet_() {
+  var ss = DTInv_getSpreadsheet_();
+  var sheet = ss.getSheetByName('419A_Unmatched_Review') || ss.insertSheet('419A_Unmatched_Review');
+  var existingValues = sheet.getDataRange().getValues();
+  var headerRow = DTInv_findReviewHeaderRow_(existingValues, ['old item name', 'reviewer decision']);
+  var existingRows = [];
+  if (headerRow !== -1) {
+    var headers = existingValues[headerRow].map(DTInv_normalizeHeader_);
+    for (var i = headerRow + 1; i < existingValues.length; i++) {
+      if (!DTInv_rowHasContent_(existingValues[i])) continue;
+      existingRows.push(DTInv_rowByHeaders_(existingValues[i], headers));
+    }
+  }
+
+  var storageLabels = DTInv_getStorageLabelByCode_();
+  var output = existingRows.map(function (row) {
+    var suggestedCode = row['suggested new location code'] || row['possible match / suggested location code'] || row['old location code'] || '';
+    var decision = row['reviewer decision'] || 'Keep for Later Review';
+    if (decision === 'Pending Review') decision = 'Keep for Later Review';
+    var action = row.action || (decision === 'Assign to Location Code' ? 'Ready to append after review' : 'Physical check required');
+    return [
+      row['old item id'] || '',
+      row['old item name'] || '',
+      row['old room'] || '',
+      row['old location'] || '',
+      row['old category'] || '',
+      row['old quantity'] || row['old qty'] || '',
+      suggestedCode,
+      row.confidence || '',
+      row['reason unmatched'] || '',
+      decision,
+      row['final location code'] || '',
+      storageLabels[row['final location code']] || storageLabels[suggestedCode] || row['new storage label'] || '',
+      action,
+      '',
+      row.notes || 'Physically check storage before appending to Inventory.'
+    ];
+  });
+
+  sheet.clear();
+  DTInv_resetSheetRules_(sheet);
+  var instructions = [
+    ['419A Unmatched Review'],
+    ['Physically check item location before assigning a Final Location Code. Location Code is the operational 419A QR route identity.'],
+    ['Do not append rows to Inventory until Final Location Code, item name/category/quantity, and reviewer decision are confirmed.'],
+    ['Only reviewed rows should be imported/appended; leave uncertain rows for later review.']
+  ];
+  var summaryLabels = [
+    'Total unmatched',
+    'Unresolved',
+    'Assigned',
+    'Needs physical check',
+    'Archive/remove',
+    'Duplicate',
+    'Not 419A',
+    'Ready to append'
+  ];
+  var newHeaders = [
+    'Old Item ID',
+    'Old Item Name',
+    'Old Room',
+    'Old Location',
+    'Old Category',
+    'Old Qty',
+    'Possible Match / Suggested Location Code',
+    'Confidence',
+    'Reason Unmatched',
+    'Reviewer Decision',
+    'Final Location Code',
+    'New Storage Label',
+    'Action',
+    'Ready to Append?',
+    'Notes'
+  ];
+  var headerRow = 9;
+  var dataStartRow = headerRow + 1;
+  var rowCount = Math.max(output.length, 1);
+  var summaryFormulas = [
+    '=COUNTA(B' + dataStartRow + ':B)',
+    '=COUNTIF(N' + dataStartRow + ':N,"No")',
+    '=COUNTIF(J' + dataStartRow + ':J,"Assign to Location Code")',
+    '=COUNTIF(J' + dataStartRow + ':J,"Needs Physical Check")',
+    '=COUNTIF(J' + dataStartRow + ':J,"Archive / Remove")',
+    '=COUNTIF(J' + dataStartRow + ':J,"Duplicate of Existing")',
+    '=COUNTIF(J' + dataStartRow + ':J,"Not 419A")',
+    '=COUNTIF(N' + dataStartRow + ':N,"Yes")'
+  ];
+
+  sheet.getRange(1, 1, instructions.length, 1).setValues(instructions);
+  sheet.getRange(4, 1, 1, summaryLabels.length).setValues([summaryLabels]);
+  sheet.getRange(5, 1, 1, summaryFormulas.length).setFormulas([summaryFormulas]);
+  sheet.getRange(7, 1).setValue('Ready to Append becomes Yes only when Reviewer Decision is Assign to Location Code and Final Location Code is filled.');
+  sheet.getRange(headerRow, 1, 1, newHeaders.length).setValues([newHeaders]);
+  if (output.length) {
+    sheet.getRange(dataStartRow, 1, output.length, newHeaders.length).setValues(output);
+    sheet.getRange(dataStartRow, 14, output.length, 1).setFormulaR1C1('=IF(AND(RC[-4]="Assign to Location Code",RC[-3]<>""),"Yes","No")');
+  }
+  sheet.setFrozenRows(headerRow);
+  sheet.getRange(1, 1, 1, newHeaders.length).mergeAcross().setFontWeight('bold').setFontSize(14).setBackground('#fef3c7');
+  sheet.getRange(2, 1, 2, newHeaders.length).mergeAcross().setWrap(true).setBackground('#fff7ed');
+  sheet.getRange(4, 1, 2, summaryLabels.length).setFontWeight('bold').setBackground('#f8fafc');
+  sheet.getRange(7, 1, 1, newHeaders.length).mergeAcross().setWrap(true).setBackground('#eef2ff');
+  sheet.getRange(headerRow, 1, 1, newHeaders.length).setFontWeight('bold').setBackground('#fff3cd');
+  sheet.getRange(dataStartRow, 10, rowCount, 1).setDataValidation(DTInv_listValidation_([
+    'Assign to Location Code',
+    'Archive / Remove',
+    'Duplicate of Existing',
+    'Needs Physical Check',
+    'Not 419A',
+    'Keep for Later Review'
+  ]));
+  sheet.getRange(dataStartRow, 13, rowCount, 1).setDataValidation(DTInv_listValidation_([
+    'Do not import yet',
+    'Ready to append after review',
+    'Archive',
+    'Merge duplicate',
+    'Physical check required',
+    'Keep for later'
+  ]));
+  var filter = sheet.getFilter();
+  if (filter) filter.remove();
+  sheet.getRange(headerRow, 1, rowCount + 1, newHeaders.length).createFilter();
+  var decisionRange = sheet.getRange(dataStartRow, 10, rowCount, 1);
+  var readyRange = sheet.getRange(dataStartRow, 14, rowCount, 1);
+  sheet.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Needs Physical Check').setBackground('#fde68a').setRanges([decisionRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Keep for Later Review').setBackground('#e5e7eb').setRanges([decisionRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Assign to Location Code').setBackground('#dbeafe').setRanges([decisionRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Yes').setBackground('#bbf7d0').setRanges([readyRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('No').setBackground('#fee2e2').setRanges([readyRange]).build()
+  ]);
+  sheet.autoResizeColumns(1, newHeaders.length);
+  sheet.getRange(1, 1, Math.max(sheet.getLastRow(), dataStartRow), newHeaders.length).setWrap(true);
+  return { sheetName: sheet.getName(), reviewRows: output.length };
+}
+
+function DTInv_createPilotTestLog_() {
+  var ss = DTInv_getSpreadsheet_();
+  var sheet = ss.getSheetByName('PILOT_TEST_LOG') || ss.insertSheet('PILOT_TEST_LOG');
+  var headers = [
+    'Timestamp',
+    'Tester',
+    'Role',
+    'Storage Code',
+    'Test Type',
+    'Expected Result',
+    'Actual Result',
+    'Pass/Fail',
+    'Issue',
+    'Follow-up Owner',
+    'Notes'
+  ];
+  var existingValues = sheet.getDataRange().getValues();
+  var headerRowIndex = DTInv_findReviewHeaderRow_(existingValues, ['timestamp', 'storage code', 'pass/fail']);
+  var rows = [];
+  if (headerRowIndex !== -1) {
+    var existingHeaders = existingValues[headerRowIndex].map(DTInv_normalizeHeader_);
+    for (var i = headerRowIndex + 1; i < existingValues.length; i++) {
+      if (!DTInv_rowHasContent_(existingValues[i])) continue;
+      var row = DTInv_rowByHeaders_(existingValues[i], existingHeaders);
+      rows.push([
+        row.timestamp || '',
+        row.tester || '',
+        row.role || '',
+        row['storage code'] || '',
+        row['test type'] || '',
+        row['expected result'] || '',
+        row['actual result'] || '',
+        row['pass/fail'] || '',
+        row.issue || '',
+        row['follow-up owner'] || '',
+        row.notes || ''
+      ]);
+    }
+  }
+  if (!rows.length) rows = DTInv_pilotSampleRows_();
+
+  sheet.clear();
+  DTInv_resetSheetRules_(sheet);
+  var headerRow = 9;
+  var dataStartRow = headerRow + 1;
+  var rowCount = Math.max(rows.length, 1);
+  var summaryLabels = [
+    'Total tests',
+    'Passed',
+    'Failed',
+    'Blocked/Retest',
+    'Unresolved issues',
+    'Critical issues',
+    'Ready for sample labels',
+    'Ready for wider pilot'
+  ];
+  var summaryFormulas = [
+    '=COUNTA(D' + dataStartRow + ':D)',
+    '=COUNTIF(H' + dataStartRow + ':H,"Pass")',
+    '=COUNTIF(H' + dataStartRow + ':H,"Fail")',
+    '=COUNTIF(H' + dataStartRow + ':H,"Blocked")+COUNTIF(H' + dataStartRow + ':H,"Retest")',
+    '=COUNTIFS(I' + dataStartRow + ':I,"<>",H' + dataStartRow + ':H,"<>Pass")',
+    '=COUNTIF(I' + dataStartRow + ':I,"*critical*")',
+    '=IF(AND(COUNTIF(H' + dataStartRow + ':H,"Fail")=0,COUNTIF(H' + dataStartRow + ':H,"Blocked")=0,COUNTIF(H' + dataStartRow + ':H,"Pass")>=3),"Yes","No")',
+    '=IF(AND(COUNTA(D' + dataStartRow + ':D)>0,COUNTIF(H' + dataStartRow + ':H,"Pass")=COUNTA(D' + dataStartRow + ':D),COUNTIF(I' + dataStartRow + ':I,"*critical*")=0),"Yes","No")'
+  ];
+  var intro = [
+    ['419A Controlled Pilot Test Log'],
+    ['Pilot scope: 419A-CAB-01, 419A-FCU-01, and one additional non-chemical 419A storage. Record scan, View Mode, Update Mode, Audit_Log, label readability, and confusion points.'],
+    ['Do not proceed to full label printing until sample scans pass and warning decisions are recorded.']
+  ];
+  sheet.getRange(1, 1, intro.length, 1).setValues(intro);
+  sheet.getRange(4, 1, 1, summaryLabels.length).setValues([summaryLabels]);
+  sheet.getRange(5, 1, 1, summaryFormulas.length).setFormulas([summaryFormulas]);
+  sheet.getRange(7, 1).setValue('Every failed/blocked row needs an issue, follow-up owner, and retest before wider rollout.');
+  sheet.getRange(headerRow, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(dataStartRow, 1, rows.length, headers.length).setValues(rows);
+  var totalRows = Math.max(rowCount, 20);
+  sheet.setFrozenRows(headerRow);
+  sheet.getRange(1, 1, 1, headers.length).mergeAcross().setFontWeight('bold').setFontSize(14).setBackground('#dcfce7');
+  sheet.getRange(2, 1, 2, headers.length).mergeAcross().setWrap(true).setBackground('#f0fdf4');
+  sheet.getRange(4, 1, 2, summaryLabels.length).setFontWeight('bold').setBackground('#f8fafc');
+  sheet.getRange(7, 1, 1, headers.length).mergeAcross().setWrap(true).setBackground('#eef2ff');
+  sheet.getRange(headerRow, 1, 1, headers.length).setFontWeight('bold').setBackground('#d1e7dd');
+  sheet.getRange(dataStartRow, 3, totalRows, 1).setDataValidation(DTInv_listValidation_([
+    'Student/Staff',
+    'Technician',
+    'Teacher',
+    'Admin/HoD'
+  ]));
+  sheet.getRange(dataStartRow, 5, totalRows, 1).setDataValidation(DTInv_listValidation_([
+    'QR scan',
+    'View Mode',
+    'Update Mode',
+    'Audit_Log check',
+    'Label readability',
+    'Workflow observation'
+  ]));
+  sheet.getRange(dataStartRow, 8, totalRows, 1).setDataValidation(DTInv_listValidation_(['Pass', 'Fail', 'Blocked', 'Retest']));
+  var filter = sheet.getFilter();
+  if (filter) filter.remove();
+  sheet.getRange(headerRow, 1, rowCount + 1, headers.length).createFilter();
+  var passFailRange = sheet.getRange(dataStartRow, 8, totalRows, 1);
+  sheet.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Pass').setBackground('#bbf7d0').setRanges([passFailRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Fail').setBackground('#fecaca').setRanges([passFailRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Blocked').setBackground('#fde68a').setRanges([passFailRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Retest').setBackground('#dbeafe').setRanges([passFailRange]).build()
+  ]);
+  sheet.autoResizeColumns(1, headers.length);
+  sheet.getRange(1, 1, Math.max(sheet.getLastRow(), dataStartRow), headers.length).setWrap(true);
+  return { sheetName: sheet.getName(), templateRows: Math.max(sheet.getLastRow() - 5, 0) };
+}
+
+function DTInv_triageForIssue_(issueType) {
+  var issue = DTInv_clean_(issueType);
+  var map = {
+    CHEMICAL_SAFETY_NOTE_MISSING: {
+      group: 'Chemical safety note / SDS',
+      owner: 'Technician / HoD',
+      decision: 'Fix before full rollout',
+      action: 'Add Safety Note or Remarks before chemical storage rollout.',
+      status: 'Fix Now'
+    },
+    CHEMICAL_SDS_LINK_MISSING: {
+      group: 'Chemical safety note / SDS',
+      owner: 'Technician / HoD',
+      decision: 'Fix before full rollout',
+      action: 'Attach SDS Link or mark SDS unavailable after safety review.',
+      status: 'Fix Now'
+    },
+    LOW_STOCK_REORDER_LEVEL_MISSING: {
+      group: 'Reorder threshold',
+      owner: 'Technician / HoD',
+      decision: 'Needs HoD decision',
+      action: 'Add Reorder Level for purchasing review.',
+      status: 'Needs HoD Decision'
+    },
+    MAINTENANCE_DETAIL_MISSING: {
+      group: 'Maintenance detail',
+      owner: 'Technician',
+      decision: 'Needs technician check',
+      action: 'Add Maintenance Due or technician remark.',
+      status: 'Needs Technician Check'
+    },
+    '419A_MISSING_STORAGE_CODE': {
+      group: 'Manual reassignment related',
+      owner: 'Technician / HoD',
+      decision: 'Needs technician check',
+      action: 'Map legacy row to current 419A Location Code or archive legacy row.',
+      status: 'Needs Technician Check'
+    }
+  };
+  return map[issue] || {
+    group: issue.indexOf('OPTIONAL') !== -1 ? 'Metadata only' : 'Other',
+    owner: 'Technician / HoD',
+    decision: 'Needs technician check',
+    action: 'Review the readiness report message and decide before full rollout.',
+    status: 'Needs Technician Check'
+  };
+}
+
+function DTInv_getStorageLabelByCode_() {
+  var labels = {};
+  var sheet = DTInv_getSpreadsheet_().getSheetByName(DTINV_CONFIG.STORAGE_MASTER_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return labels;
+  var values = sheet.getDataRange().getValues();
+  var headers = values[0].map(DTInv_normalizeHeader_);
+  var codeIndex = DTInv_findHeaderIndex_(headers, ['location code']);
+  var labelIndex = DTInv_findHeaderIndex_(headers, ['storage label']);
+  for (var i = 1; i < values.length; i++) {
+    var code = DTInv_clean_(values[i][codeIndex]);
+    if (code) labels[code] = DTInv_clean_(values[i][labelIndex]);
+  }
+  return labels;
+}
+
+function DTInv_pilotSampleRows_() {
+  var thirdStorage = DTInv_findAdditionalPilotStorage_();
+  var now = new Date();
+  return [
+    [now, '', 'Technician', '419A-CAB-01', 'QR scan', 'Phone opens View Mode for Chemical Cabinet 01; hazard wording is visible.', '', '', '', '', 'Chemical storage sample label.'],
+    [now, '', 'Technician', '419A-FCU-01', 'Update Mode', 'Authorised user can enter Update Mode, make a safe change, save, restore, and confirm Audit_Log.', '', '', '', '', 'Normal storage sample label.'],
+    [now, '', 'Teacher', thirdStorage, 'View Mode', 'Page opens correct 419A storage with no edit controls visible in View Mode.', '', '', '', '', 'Additional non-chemical storage sample.']
+  ];
+}
+
+function DTInv_findAdditionalPilotStorage_() {
+  var sheet = DTInv_getSpreadsheet_().getSheetByName(DTINV_CONFIG.STORAGE_MASTER_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return '419A-___-__';
+  var values = sheet.getDataRange().getValues();
+  var headers = values[0].map(DTInv_normalizeHeader_);
+  var roomIndex = DTInv_findHeaderIndex_(headers, ['room']);
+  var codeIndex = DTInv_findHeaderIndex_(headers, ['location code']);
+  var typeIndex = DTInv_findHeaderIndex_(headers, ['storage type']);
+  for (var i = 1; i < values.length; i++) {
+    var room = DTInv_clean_(values[i][roomIndex]);
+    var code = DTInv_clean_(values[i][codeIndex]);
+    var type = DTInv_clean_(values[i][typeIndex]).toLowerCase();
+    if (room === DTINV_CONFIG.ROLLOUT_ROOM && code && code !== '419A-CAB-01' && code !== '419A-FCU-01' && type.indexOf('chemical') === -1) {
+      return code;
+    }
+  }
+  return '419A-___-__';
+}
+
+function DTInv_findReviewHeaderRow_(values, requiredHeaders) {
+  var required = (requiredHeaders || []).map(DTInv_normalizeHeader_);
+  for (var i = 0; i < Math.min(values.length, 10); i++) {
+    var headers = values[i].map(DTInv_normalizeHeader_);
+    var found = required.every(function (header) { return headers.indexOf(header) !== -1; });
+    if (found) return i;
+  }
+  return -1;
+}
+
+function DTInv_rowByHeaders_(row, normalizedHeaders) {
+  var result = {};
+  for (var i = 0; i < normalizedHeaders.length; i++) {
+    if (normalizedHeaders[i]) result[normalizedHeaders[i]] = row[i];
+  }
+  return result;
+}
+
+function DTInv_listValidation_(items) {
+  return SpreadsheetApp.newDataValidation().requireValueInList(items, true).setAllowInvalid(false).build();
+}
+
+function DTInv_padNumber_(value, width) {
+  var text = String(value);
+  while (text.length < width) text = '0' + text;
+  return text;
+}
+
 function DTInv_getSpreadsheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('No active spreadsheet. Open the live dashboard Google Sheet first.');
@@ -1073,6 +1684,15 @@ function DTInv_getWebAppBaseUrl_() {
 
 function DTInv_buildLocationUrl_(baseUrl, room, loc) {
   return String(baseUrl).replace(/[?#].*$/, '') + '?room=' + encodeURIComponent(room) + '&loc=' + encodeURIComponent(loc);
+}
+
+function DTInv_hyperlinkFormula_(url, label) {
+  if (!url) return '';
+  return '=HYPERLINK("' + DTInv_formulaString_(url) + '","' + DTInv_formulaString_(label || url) + '")';
+}
+
+function DTInv_formulaString_(value) {
+  return DTInv_clean_(value).replace(/"/g, '""');
 }
 
 function DTInv_preferredRouteLocation_(room, loc, storageId, storageLabel, locationCode) {
