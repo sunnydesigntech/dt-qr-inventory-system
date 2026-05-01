@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>D&T QR Inventory · Build Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --ink:#0f172a; --ink-2:#334155; --muted:#64748b; --line:#e2e8f0;
+    --bg:#f8fafc; --card:#ffffff;
+    --blue:#1d4ed8; --blue-50:#eff6ff;
+    --teal:#0d9488; --teal-50:#ccfbf1;
+    --amber:#b45309; --amber-50:#fef3c7;
+    --red:#b91c1c; --red-50:#fee2e2;
+    --em:#047857; --em-50:#d1fae5;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter Tight',system-ui,sans-serif;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:920px;margin:0 auto;padding:56px 32px 120px}
+  h1,h2,h3,h4{font-family:'Inter Tight',sans-serif;letter-spacing:-0.015em;color:var(--ink);margin:0}
+  h1{font-size:40px;font-weight:600;letter-spacing:-0.025em;line-height:1.1}
+  h2{font-size:24px;font-weight:600;margin:52px 0 14px;padding-top:22px;border-top:1px solid var(--line)}
+  h3{font-size:17px;font-weight:600;margin:28px 0 8px}
+  h4{font-size:13px;font-weight:600;margin:18px 0 6px;color:var(--ink-2);text-transform:uppercase;letter-spacing:0.1em}
+  p{margin:0 0 12px;color:var(--ink-2)}
+  ul,ol{margin:0 0 14px;padding-left:22px;color:var(--ink-2)}
+  li{margin:4px 0}
+  code,kbd{font-family:'JetBrains Mono',monospace;font-size:0.86em;background:#f1f5f9;border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:#0f172a}
+  pre{background:#0f172a;color:#e2e8f0;padding:18px 20px;border-radius:12px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.6;margin:14px 0}
+  pre .c{color:#94a3b8} pre .k{color:#93c5fd} pre .s{color:#86efac} pre .n{color:#fcd34d}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+  th{background:#f1f5f9;font-weight:600;color:var(--ink)}
+  td code{font-size:12px}
+  .meta{color:var(--muted);font-size:13.5px;margin-top:8px}
+  .eyebrow{font-size:11px;font-weight:600;letter-spacing:0.22em;color:var(--blue);text-transform:uppercase}
+  .pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:0.04em;border:1px solid transparent;vertical-align:1px}
+  .pill-blue{background:var(--blue-50);color:var(--blue);border-color:#bfdbfe}
+  .pill-teal{background:var(--teal-50);color:var(--teal);border-color:#99f6e4}
+  .pill-amber{background:var(--amber-50);color:var(--amber);border-color:#fde68a}
+  .pill-red{background:var(--red-50);color:var(--red);border-color:#fecaca}
+  .pill-em{background:var(--em-50);color:var(--em);border-color:#a7f3d0}
+  .pill-neutral{background:#f1f5f9;color:var(--ink-2);border-color:#e2e8f0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:10px 0}
+  .card.tone-em{border-color:#a7f3d0;background:linear-gradient(180deg,#ecfdf5 0%,#fff 60%)}
+  .card.tone-amber{border-color:#fde68a;background:#fffbeb}
+  .card.tone-red{border-color:#fecaca;background:#fff5f5}
+  .card.tone-blue{border-color:#bfdbfe;background:#f5f9ff}
+  .toc{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 18px;font-size:13.5px;margin:24px 0 0;padding:18px 22px;background:#fff;border:1px solid var(--line);border-radius:14px}
+  .toc a{color:var(--ink);text-decoration:none}
+  .toc a:hover{color:var(--blue);text-decoration:underline}
+  .toc .num{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11.5px;margin-right:8px}
+  .checklist{list-style:none;padding:0;margin:8px 0}
+  .checklist li{padding-left:28px;position:relative;margin:6px 0;color:var(--ink-2)}
+  .checklist li::before{content:"";position:absolute;left:0;top:6px;width:14px;height:14px;border:1.5px solid #cbd5e1;border-radius:4px;background:#fff}
+  .checklist li.done::before{background:var(--em);border-color:var(--em)}
+  .checklist li.done::after{content:"";position:absolute;left:3px;top:9px;width:8px;height:4px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg)}
+  .kv{display:grid;grid-template-columns:170px 1fr;gap:6px 16px;font-size:13.5px;margin:6px 0 0}
+  .kv dt{color:var(--muted);font-weight:500}
+  .kv dd{margin:0;color:var(--ink)}
+  .kv dd code{font-size:12px}
+  .route{font-family:'JetBrains Mono',monospace;font-size:12px;background:#0f172a;color:#e2e8f0;padding:9px 12px;border-radius:8px;display:block;margin:6px 0;overflow-x:auto;white-space:nowrap}
+  .callout{display:flex;gap:12px;padding:14px 16px;border-radius:12px;border:1px solid var(--line);background:#fff;margin:14px 0}
+  .callout .ico{flex-shrink:0;width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+  .callout-warn .ico{background:var(--amber-50);color:var(--amber)}
+  .callout-info .ico{background:var(--blue-50);color:var(--blue)}
+  .callout-ok .ico{background:var(--em-50);color:var(--em)}
+  .callout strong{color:var(--ink)}
+  .file-tree{font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.85;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 18px;color:var(--ink-2)}
+  .file-tree .f{color:var(--ink);font-weight:500}
+  .file-tree .new{color:var(--em);font-weight:600}
+  .file-tree .note{color:var(--muted);float:right;font-weight:400}
+  hr{border:0;border-top:1px solid var(--line);margin:32px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="eyebrow">Handoff · v2.0</div>
+<h1>D&amp;T QR Inventory · Build Notes</h1>
+<p class="meta">Single-file Apps Script web app · 419A rollout-ready · companion to <code>Design Spec.html</code> and <code>D&amp;T QR Inventory.html</code> (the live prototype).</p>
+
+<div class="toc" aria-label="Contents">
+  <a href="#summary"><span class="num">01</span>Summary of changes</a>
+  <a href="#deliverables"><span class="num">02</span>What you're getting</a>
+  <a href="#routes"><span class="num">03</span>Routes &amp; modes</a>
+  <a href="#screens"><span class="num">04</span>Screens shipped</a>
+  <a href="#data"><span class="num">05</span>Data flow &amp; save bridge</a>
+  <a href="#config"><span class="num">06</span>Config &amp; graceful degradation</a>
+  <a href="#deploy"><span class="num">07</span>Deploy procedure</a>
+  <a href="#test"><span class="num">08</span>Test plan / smoke checks</a>
+  <a href="#known"><span class="num">09</span>Known limits &amp; rollback</a>
+  <a href="#next"><span class="num">10</span>Next-up backlog</a>
+</div>
+
+<h2 id="summary">01 · Summary of changes</h2>
+<p>This pass replaces the existing <code>code.gs</code> web-app render with a complete UI system: a navigable landing dashboard, a two-mode storage page (View / Tech), an admin readiness screen, a printable QR-label sheet, and a diagnostics panel. Everything is server-rendered from one Apps Script file — no separate HTML/CSS/JS tracked, per repo policy.</p>
+
+<div class="grid2">
+  <div class="card tone-em">
+    <h4 style="color:var(--em);margin-top:0">Wins</h4>
+    <ul>
+      <li>Mobile-first cards with 44 px hit targets — works on a phone in the workshop.</li>
+      <li>Tech Mode batch-save with sticky save bar, dirty-state badges, optimistic UI &amp; rollback toast.</li>
+      <li>Readiness scoring (errors × 8 + warnings × 1, capped 0–100) surfaces blockers before rollout.</li>
+      <li>Zero-config browsing: in-app links are relative, so the app runs without <code>WEB_APP_BASE_URL</code>.</li>
+      <li>Printable QR label sheet (A4, 2-up) with hazard treatment.</li>
+    </ul>
+  </div>
+  <div class="card tone-amber">
+    <h4 style="color:var(--amber);margin-top:0">Caveats</h4>
+    <ul>
+      <li>QR <em>generation</em> still requires <code>WEB_APP_BASE_URL</code>; in-app navigation does not.</li>
+      <li>Tailwind is loaded via CDN — fine inside an Apps Script <code>HtmlService</code> iframe, but degrades to unstyled HTML if blocked. Critical layout uses base CSS that survives.</li>
+      <li>No offline queue yet — Tech Mode saves require an open round-trip to Apps Script.</li>
+      <li>Audit trail (timestamp + user + before/after) is out of scope for this pass.</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="deliverables">02 · What you're getting</h2>
+
+<h4>Files in this project</h4>
+<div class="file-tree">
+<div><span class="f new">code.gs</span><span class="note">production-ready single-file Apps Script — overwrites the previous render</span></div>
+<div><span class="f new">D&amp;T QR Inventory.html</span><span class="note">live, tweakable hi-fi prototype</span></div>
+<div><span class="f new">Design Spec.html</span><span class="note">tokens · components · screens · code-level guidance</span></div>
+<div><span class="f new">Build Notes.html</span><span class="note">this document</span></div>
+<div><span style="color:var(--muted)">app.jsx · screens-*.jsx · icons.jsx · data.js · styles.css · tweaks-panel.jsx</span><span class="note">prototype source — not pushed to Apps Script</span></div>
+</div>
+
+<div class="callout callout-info">
+  <div class="ico">i</div>
+  <div><strong>Push policy is preserved.</strong> Only <code>code.gs</code> and <code>appsscript.json</code> are tracked for <code>clasp push</code>. Everything else lives in this design project for review and reference. Confirm with <code>npx --yes @google/clasp status</code> before pushing.</div>
+</div>
+
+<h2 id="routes">03 · Routes &amp; modes</h2>
+<p>All routes are handled by one <code>doGet(e)</code>. Parameters are read defensively; unknown values fall back to landing.</p>
+
+<table>
+  <thead><tr><th>Route</th><th>What it renders</th><th>Audience</th></tr></thead>
+  <tbody>
+    <tr><td><code>?</code></td><td>Landing dashboard · rollout hero · 5-tile metrics · search + room chips · storage grid · sidebar (readiness + config)</td><td>All users</td></tr>
+    <tr><td><code>?room=419A&amp;loc=&lt;sid&gt;</code></td><td>Storage page · View Mode</td><td>Teachers, students</td></tr>
+    <tr><td><code>?room=419A&amp;loc=&lt;sid&gt;&amp;mode=tech</code></td><td>Storage page · Tech Mode (qty / status edits + save)</td><td>Technician</td></tr>
+    <tr><td><code>?admin=readiness</code></td><td>Readiness score, issue tiles, 419A rollout panel, next actions</td><td>Admin</td></tr>
+    <tr><td><code>?admin=labels</code></td><td>QR-label print preview · A4 · 2-up · hazard treatment</td><td>Admin</td></tr>
+    <tr><td><code>?admin=diagnostics</code></td><td>Config status with how-to-fix guidance</td><td>Admin</td></tr>
+  </tbody>
+</table>
+
+<p class="meta">Mode background: View Mode is white; Tech Mode tints the page faint amber (<code>#fffbeb</code>) so the editor is unmistakable on a phone in low light.</p>
+
+<h2 id="screens">04 · Screens shipped</h2>
+
+<h3>4.1 Landing</h3>
+<p>Mobile-first storage grid; desktop adds a sticky right rail with readiness + config. Storage cards expose <em>two</em> primary actions — View / Tech — without hiding either behind a menu. Hazard storages get a red icon chip and pill so a technician spots chemical cabinets at a glance.</p>
+
+<h3>4.2 Storage page · View Mode</h3>
+<p>Read-only. Hero summarises room, label, IDs, item/chemical/attention counts. Each item shows quantity + status as a self-contained tile. A status-breakdown sidebar appears on desktop only — mobile collapses to the list.</p>
+
+<h3>4.3 Storage page · Tech Mode</h3>
+<p>Same shell as View Mode but each row exposes a stepper-input quantity and a status select. Edits are tracked client-side; the sticky save bar shows the unsaved-change count and a Save / Reset pair. Saving sends the diff array via <code>google.script.run.applyInventoryUpdates</code>; the server validates qty (≥ 0, finite) and status (whitelist) per row.</p>
+
+<h3>4.4 Admin · Readiness</h3>
+<p>Top card: SVG gauge + score (errors × 8 + warnings × 1). Six tiles: errors, warnings, missing QR, missing storage IDs, invalid quantities, duplicates. The 419A rollout strip mirrors the landing hero. Sidebar lists actionable next steps that change with the data.</p>
+
+<h3>4.5 Admin · QR Labels</h3>
+<p>A4 print preview, 2-up. Each label: VSA D&amp;T eyebrow · storage name · specific location · monospaced storage-ID badge · scan-to-view caption · faint URL footer. Hazard cabinets get a tinted background and PPE caption. Print stylesheet hides chrome and sizes to <code>@page A4 / 8 mm</code>.</p>
+
+<h3>4.6 Admin · Diagnostics</h3>
+<p>One row per config check: green = ok, amber = optional missing, red = critical missing. Every failed check ships an inline <em>How to fix</em> hint pointing at the spreadsheet menu — no chasing through README. Sidebar lists what works without <code>WEB_APP_BASE_URL</code> vs. what requires it.</p>
+
+<h2 id="data">05 · Data flow &amp; save bridge</h2>
+
+<h4>Read path</h4>
+<ol>
+  <li><code>doGet</code> reads script properties → opens spreadsheet → reads <code>Inventory</code> sheet (or override).</li>
+  <li><code>readInventoryRows_</code> builds <code>{headers, rows}</code> with each row tagged with its sheet row number.</li>
+  <li><code>rowToItem_</code> normalises types (qty → number, hazard → boolean, status → trimmed string).</li>
+  <li><code>buildBootstrapData_</code> aggregates per-storage / per-room stats, sorts 419A first, computes readiness.</li>
+  <li>Server emits a fully rendered HTML string — no client-side fetch.</li>
+</ol>
+
+<h4>Write path (Tech Mode)</h4>
+<pre><span class="c">// Client</span>
+google.script.run
+  .withSuccessHandler(onOk)
+  .withFailureHandler(onErr)
+  .applyInventoryUpdates({ <span class="k">room</span>, <span class="k">storageId</span>, <span class="k">edits</span>: [
+    { <span class="k">sheetRow</span>: <span class="n">42</span>, <span class="k">qty</span>: <span class="n">12</span>, <span class="k">status</span>: <span class="s">'Low Stock'</span> },
+    { <span class="k">sheetRow</span>: <span class="n">43</span>, <span class="k">qty</span>: <span class="n">0</span>,  <span class="k">status</span>: <span class="s">'Missing'</span>  }
+  ]});
+
+<span class="c">// Server (code.gs)</span>
+function applyInventoryUpdates(payload) {
+  <span class="c">// validates qty ≥ 0 + finite, status ∈ whitelist, sheetRow ≥ 2;</span>
+  <span class="c">// per-row writes to Quantity / Status columns; returns { ok, applied }</span>
+}
+</pre>
+
+<div class="callout callout-warn">
+  <div class="ico">!</div>
+  <div><strong>Concurrency.</strong> Apps Script serialises calls per script, but two technicians editing the same row will overwrite each other — last-write-wins. Acceptable for a 1-room pilot; surface this in the audit-trail backlog.</div>
+</div>
+
+<h2 id="config">06 · Config &amp; graceful degradation</h2>
+
+<table>
+  <thead><tr><th>Property</th><th>Required?</th><th>If missing…</th></tr></thead>
+  <tbody>
+    <tr><td><code>SPREADSHEET_ID</code></td><td><span class="pill pill-red">Required</span></td><td>App renders the setup error page with a how-to-fix block. Nothing else is reachable.</td></tr>
+    <tr><td><code>WEB_APP_BASE_URL</code></td><td><span class="pill pill-amber">Recommended</span></td><td>In-app navigation works (relative links). QR-link generation, printed-label URLs, and external absolute links are disabled. The landing screen and the diagnostics page both surface a notice.</td></tr>
+    <tr><td><code>INVENTORY_SHEET_NAME</code></td><td><span class="pill pill-neutral">Optional</span></td><td>Defaults to <code>Inventory</code>.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deploy">07 · Deploy procedure</h2>
+
+<h4>Pre-push</h4>
+<pre><span class="c"># Syntax check</span>
+node --check --input-type=commonjs &lt; code.gs
+
+<span class="c"># Confirm tracked files</span>
+npx --yes @google/clasp status
+<span class="c"># expected:</span>
+<span class="c">#   appsscript.json</span>
+<span class="c">#   code.gs</span>
+</pre>
+
+<h4>Push &amp; deploy</h4>
+<pre>npx --yes @google/clasp push --force
+
+<span class="c"># Only after smoke-testing the pushed code in the editor:</span>
+npx --yes @google/clasp deploy \
+  --deploymentId AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ \
+  --description "D&amp;T QR Inventory v2 · UI rebuild"
+</pre>
+
+<div class="callout callout-info">
+  <div class="ico">i</div>
+  <div><strong>Do not redeploy mid-pass.</strong> Push first, exercise the test URLs, then deploy. The previous live version is <code>@2</code> — keep that handy for rollback.</div>
+</div>
+
+<h2 id="test">08 · Test plan / smoke checks</h2>
+
+<h4>Pre-rollout (every push)</h4>
+<ol class="checklist">
+  <li>Landing renders; rollout hero shows 419A percent &gt; 0.</li>
+  <li>Room chips filter the grid; "All rooms" restores it.</li>
+  <li>Storage search matches by ID, label, code, room — case-insensitive.</li>
+  <li>Storage card · View link opens the View Mode page.</li>
+  <li>Storage card · Tech Update opens Tech Mode (page tint changes).</li>
+  <li>View Mode · status filter narrows the list.</li>
+  <li>Tech Mode · stepper buttons clamp at 0.</li>
+  <li>Tech Mode · changing qty <em>or</em> status flips the row to dirty + amber badge.</li>
+  <li>Tech Mode · Save → green toast, dirty count → 0, originals updated.</li>
+  <li>Tech Mode · Reset reverts every dirty row.</li>
+  <li>Spreadsheet → confirm the rows actually changed.</li>
+  <li>Readiness score reflects current state; 419A rollout panel matches landing.</li>
+  <li>QR Labels print preview · Cmd-P shows 2-up A4 with no chrome.</li>
+  <li>Diagnostics shows green for SPREADSHEET_ID, amber/red elsewhere with fix copy.</li>
+  <li>Bad URL · <code>?room=419A&amp;loc=DOES-NOT-EXIST</code> renders the friendly not-found state.</li>
+</ol>
+
+<h4>Edge cases worth poking</h4>
+<ul>
+  <li>Storage that exists in the master but has zero items → empty-state card.</li>
+  <li>Item row with non-whitelist status → counted as a warning; rendered with neutral pill.</li>
+  <li>Item row with negative or non-numeric qty → counted as an error.</li>
+  <li>Viewport at 360 px — every screen should fit without horizontal scroll.</li>
+  <li>Long storage label / long item name — should ellipsize, not break the card.</li>
+</ul>
+
+<h2 id="known">09 · Known limits &amp; rollback</h2>
+<ul>
+  <li><strong>Last-write-wins.</strong> Two technicians editing the same row clobber each other.</li>
+  <li><strong>Tailwind CDN dependency.</strong> CDN unreachable → degraded styling but layout still legible (base CSS handles structure).</li>
+  <li><strong>No client-side caching.</strong> Every page is a server render; large sheets (&gt; 5 000 rows) may hit Apps Script's 6-minute execution cap. 419A is well under.</li>
+  <li><strong>No audit trail</strong> on save (intentional — backlogged).</li>
+</ul>
+
+<h4>Rollback</h4>
+<pre><span class="c"># If something goes sideways:</span>
+<span class="c"># 1. Apps Script editor → Deploy → Manage deployments → version @2</span>
+<span class="c"># 2. Or redeploy the previous code.gs from clasp/git</span>
+</pre>
+
+<h2 id="next">10 · Next-up backlog</h2>
+<ol>
+  <li><strong>Audit trail</strong> — append every save to <code>Inventory_Audit</code> with timestamp, email, before/after.</li>
+  <li><strong>Offline queue</strong> — persist Tech-Mode edits to <code>localStorage</code>, replay on reconnect.</li>
+  <li><strong>Multi-room rollout</strong> — generalise the 419A panel into a per-room readiness block.</li>
+  <li><strong>Photo attachments</strong> — base64 → Drive on the Missing / Needs Maintenance flow.</li>
+  <li><strong>Global item search</strong> — cross-room search surface on the landing screen.</li>
+  <li><strong>Real QR rendering</strong> — replace the placeholder glyph with <code>UrlFetchApp</code>-fetched QR images cached in Drive (or a server-side PNG generator).</li>
+</ol>
+
+<p class="meta" style="margin-top:48px">Open the prototype <code>D&amp;T QR Inventory.html</code> alongside this doc to walk every screen visually. <code>Design Spec.html</code> documents the tokens and components; <code>code.gs</code> is the production output.</p>
+
+</div>
+</body>
+</html>

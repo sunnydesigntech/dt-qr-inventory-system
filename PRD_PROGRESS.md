@@ -1,8 +1,8 @@
 # D&T QR Inventory System
 
-Version: V2.1 Progress PRD and Rollout Plan  
-Date: 2026-04-27  
-Status: Local production-readiness build complete; live deployment still on earlier version `@2`
+Version: V2.5 Progress PRD and Workshop Workflow Plan
+Date: 2026-05-01
+Status: Template-based Apps Script runtime deployed through `@11`; live authenticated QA and Sheet-bound admin script alignment still required before physical QR rollout.
 
 ## 1. Executive Summary
 
@@ -10,9 +10,12 @@ The D&T QR Inventory System is a Google Apps Script web app for QR-based room an
 
 The system is intended to support a real rollout starting with Room 419A, using authoritative Storage IDs, then expand to other rooms and areas including V++.
 
-The runtime app remains a single Apps Script file:
+The runtime app now uses Apps Script `HtmlService` templates so the approved prototype UI can run against live Google Sheets data:
 
-- `code.gs`
+- `code.gs` for backend logic, admin tools, imports, QR generation, diagnostics, and save validation.
+- `index.html` for the app shell.
+- `app_styles.html` for the prototype-derived design system CSS.
+- `app_script.html` for the prototype-derived plain JavaScript UI.
 
 Repository support files are allowed and now exist:
 
@@ -22,25 +25,25 @@ Repository support files are allowed and now exist:
 - `README.md`
 - `LICENSE`
 - `PRD_PROGRESS.md`
+- `prototype/`
 
 ## 2. Current Release State
 
 ### Live Apps Script Deployment
 
-Current live deployment is still the earlier version:
+Current documented production deployment:
 
-- Deployment version: `@2`
+- Deployment version: `@11`
 - Deployment ID: `AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ`
 - Web app URL: `https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec`
 
 ### Local Repo State
 
-The local repo contains substantial production-readiness improvements that have not yet been pushed or deployed after the latest validation/data-consolidation work.
+The local repo contains the template-based runtime, UI demo operations screens, documentation, matched-workbook updates, and single-deployment QR routing polish. The standalone web runtime was pushed and deployed as Apps Script version `@11`.
 
 Important note:
 
-- `clasp status` shows only `appsscript.json` and `code.gs` as Apps Script push files.
-- Standard `clasp push` previously returned `Skipping push`.
+- `clasp status` now shows the Apps Script runtime files: `app_script.html`, `app_styles.html`, `appsscript.json`, `code.gs`, and `index.html`.
 - Forced push should be used only after database consolidation and validation:
 
 ```bash
@@ -55,7 +58,7 @@ The system should let a user standing in front of a storage unit:
 2. Open the exact storage page.
 3. View expected items.
 4. See stock quantity, status, remarks, and hazard indicators.
-5. Enter Technician Mode when authorized.
+5. Enter Update Mode when authorized.
 6. Update quantity and status safely.
 7. Keep the live dashboard database accurate.
 
@@ -98,15 +101,19 @@ Needs to:
 - Google Sheets database.
 - clasp deployment from the repo.
 - Tailwind CSS via CDN.
-- Server-rendered HTML plus embedded vanilla JavaScript.
+- Server-built bootstrap payload from Google Sheets.
+- Client-rendered mobile-first prototype UI without runtime JSX/Babel compilation.
 
 ### Runtime Rule
 
-All deployed runtime logic remains in:
+All deployed runtime behavior is split across:
 
 - `code.gs`
+- `index.html`
+- `app_styles.html`
+- `app_script.html`
 
-Do not split runtime HTML, CSS, or JS into separate Apps Script files unless the architecture decision changes later.
+The earlier single-file runtime rule has been superseded by the prototype UI integration decision.
 
 ### Spreadsheet Access
 
@@ -144,6 +151,24 @@ The app now supports and recommends:
 13. `Storage Label`
 14. `QR Code Image`
 
+### Optional Operations Columns
+
+The current local pass extends `Prepare App Columns` with operations fields for a full D&T workshop workflow:
+
+- `Storage Type`
+- `Last Updated`
+- `Updated By`
+- `Is Placeholder`
+- `Safety Note`
+- `Reorder Level`
+- `Supplier`
+- `Purchase Link`
+- `Asset Value`
+- `Maintenance Due`
+- `SDS Link`
+
+These remain optional so the original 8-column sheet still works. When present, saves update timestamp/user metadata and readiness checks can flag chemical safety, reorder, and maintenance issues.
+
 ### Status Values
 
 Allowed values:
@@ -173,7 +198,7 @@ Implemented in `code.gs`:
 - Grouped room/location directory.
 - Client-side location search.
 - View Mode.
-- Technician Mode.
+- Update Mode.
 - Async saves using `google.script.run`.
 - Save validation.
 - Storage-aware routing and matching.
@@ -191,6 +216,8 @@ Supported routes:
 - `/exec?room=...&loc=...`
 - `/exec?room=...&loc=...&mode=tech`
 
+The app has one Apps Script deployment URL. These are routes on the same `/exec` web app, not separate Apps Script apps. QR labels should scan to the View route by default; authorised users can enter Update Mode from inside the app.
+
 Storage lookup supports:
 
 - `Specific Location`
@@ -204,7 +231,7 @@ Implemented:
 
 - `All Locations`
 - `View Mode`
-- `Technician Mode`
+- `Update Mode`
 - Relative in-app links that do not require `WEB_APP_BASE_URL`
 
 `WEB_APP_BASE_URL` is required only for:
@@ -213,7 +240,7 @@ Implemented:
 - QR label sheets.
 - external absolute links.
 
-### Technician Mode
+### Update Mode
 
 Implemented:
 
@@ -225,6 +252,8 @@ Implemented:
 - Success/failure notices.
 - Post-save re-render.
 - Bridge warning outside deployed Apps Script context.
+- `Last Updated` and `Updated By` metadata updates when those optional columns exist.
+- `Audit_Log` append for actual quantity/status changes.
 
 ### Location Page Filters
 
@@ -232,6 +261,7 @@ Implemented locally:
 
 - Item search.
 - Status filter.
+- Category filter.
 - Item count.
 - Chemical count.
 - Attention count.
@@ -243,6 +273,7 @@ Current menu tools in local `code.gs`:
 - `Refresh QR Links`
 - `Refresh QR Images (Optional)`
 - `Prepare App Columns`
+- `Build Storage Master`
 - `Build QR Label Sheet`
 - `Create Readiness Report`
 - `419A Readiness Summary`
@@ -303,7 +334,7 @@ Placeholder rows are intended to be clearly distinguishable:
 - Qty: `0`
 - Remarks: `Placeholder row for QR/location page`
 
-Note: the current implementation should be reviewed to confirm placeholder output fields exactly match this convention before final deployment.
+Current implementation now writes this placeholder convention and sets `Is Placeholder` when the column exists.
 
 ### Import 419A App Load Ready
 
@@ -338,8 +369,33 @@ Checks include:
 - duplicate storage placeholders.
 - QR link issues.
 - V++ encoding risks.
+- chemical rows without remarks or safety notes.
+- reorder threshold warnings.
+- maintenance rows without maintenance detail.
 
 Current report generation exists locally, but should be validated against the consolidated live database before deployment.
+
+### Build Storage Master
+
+Purpose:
+
+- Generate a `Storage_Master` sheet from the live `Inventory` tab.
+- Provide the operational room/storage map for rollout checks.
+
+Expected fields:
+
+- Storage ID
+- Room
+- Storage Label
+- Specific Location
+- Location Code
+- Storage Type
+- QR Link
+- QR Image
+- Status
+- Notes
+
+The generated sheet is derived from `Inventory`; it should not replace `Inventory` as the source of truth.
 
 ### Build QR Label Sheet
 
@@ -357,11 +413,11 @@ Expected fields:
 - Storage Label
 - Location Code
 - View URL
-- Tech URL
+- Update URL
 - QR Image Formula
 - Print Label Text
 
-Current implementation creates QR label rows locally. Before final rollout, verify that it includes both View and Tech URL fields exactly as required.
+Current implementation creates QR label rows locally and labels the edit route as `Update URL` for clearer staff-facing language.
 
 ## 9. Source Data Landscape
 
@@ -547,7 +603,7 @@ The second workbook contains legacy, semi-structured sheets. Some item rows requ
 The QR label sheet should be verified to include:
 
 - View URL
-- Tech URL
+- Update URL
 - QR image formula
 - print label text
 
@@ -568,7 +624,7 @@ If the current local implementation does not include all fields exactly, adjust 
 
 ### Short-Term Enhancements
 
-- PIN-protected Technician Mode.
+- PIN or authorised role protection for Update Mode.
 - Add/edit item workflow inside the app.
 - QR label print layout improvements.
 - Import preview/dry-run summary before committing rows.
