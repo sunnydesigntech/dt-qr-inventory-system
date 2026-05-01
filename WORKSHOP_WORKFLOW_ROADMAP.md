@@ -1,19 +1,20 @@
 # D&T QR Inventory System - Workshop Workflow Roadmap
 
 Date: 2026-05-01
-Status: Active roadmap for turning the QR inventory app into the D&T workshop operating system. The standalone web app is deployed at `@11`; authenticated VSA QA and live Sheet-bound admin script alignment remain the next rollout gates.
+Status: Active roadmap for turning the QR inventory app into the D&T workshop operating system. The standalone web app is deployed at `@12`; Room 419A now uses the authoritative `Location Code` list for QR/storage routes, with live Storage_Master, QR_Labels, and readiness outputs regenerated from the dashboard Sheet.
 
 ## Target Operating Model
 
 Every physical storage point has a Storage ID and QR code. Every inventory item belongs to a storage point. Every scan opens the correct live storage page. Every authorised update writes back to the live Google Sheet and records enough metadata for audit, reorder, maintenance, and safety planning.
 
-The app uses one Apps Script deployment URL. Storage, admin, and update views are in-app routes on that same `/exec` URL, using query parameters such as `?room=419A&loc=419A-CHEM-001`. Printed QR labels should scan to View Mode first; Update Mode is entered from inside the app by authorised staff.
+The app uses one Apps Script deployment URL. Storage, admin, and update views are in-app routes on that same `/exec` URL, using query parameters such as `?room=419A&loc=419A-FCU-01`. Printed QR labels should scan to View Mode first; Update Mode is entered from inside the app by authorised staff.
 
 ## Core Workflow
 
 1. Storage mapping
    - Define every cupboard, tray, cabinet, trolley, rack, chemical cabinet, machine zone, and material storage point.
    - Required identity: `Room`, `Storage ID`, `Storage Label`, `Specific Location`, `Location Code`, `Storage Type`.
+   - For Room 419A, `Location Code` is the operational numbering used on phone stocktake pages and printed QR labels, for example `419A-FCU-01` and `419A-CAB-01`.
    - Display room names remain human-readable, for example `V++`; ID-safe names may use forms such as `VPP-ELEC-001`.
 
 2. Item entry

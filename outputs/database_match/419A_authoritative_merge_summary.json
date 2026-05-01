@@ -1,0 +1,11 @@
+{
+  "source": "/Users/wcchun/Downloads/dt_inventory_419A_authoritative_storage_ids-3.xlsx",
+  "authoritative_storage_rows": 53,
+  "matched_item_rows_imported": 40,
+  "chemical_item_rows_imported": 21,
+  "placeholder_rows_created": 53,
+  "unique_location_codes": 53,
+  "duplicate_location_codes_in_storage_master": [],
+  "duplicate_item_keys": 0,
+  "unmatched_remapped_rows_not_imported": 72
+}

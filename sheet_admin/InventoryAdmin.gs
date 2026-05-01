@@ -213,8 +213,8 @@ function DTInv_menu419AReadinessSummary() {
     var summary = DTInv_get419AReadinessSummary_();
     var lines = [
       '419A storage locations: ' + summary.locationCount,
-      'With Storage ID: ' + summary.withStorageId,
-      'Missing Storage ID: ' + summary.missingStorageId,
+      'With 419A code: ' + summary.withStorageId,
+      'Missing 419A code: ' + summary.missingStorageId,
       'QR-ready: ' + summary.qrReady,
       'Item rows: ' + summary.itemRows,
       'Placeholder rows: ' + summary.placeholderRows,
@@ -360,7 +360,7 @@ function DTInv_refreshQrLinks_() {
     }
     var storageLabel = DTInv_optional_(row, map.storageLabel);
     var locationCode = DTInv_optional_(row, map.locationCode);
-    var routeLoc = storageId || storageLabel || locationCode || loc;
+    var routeLoc = DTInv_preferredRouteLocation_(room, loc, storageId, storageLabel, locationCode);
     var url = DTInv_buildLocationUrl_(baseUrl, room, routeLoc);
     output.push([url]);
     updated += 1;
@@ -453,8 +453,9 @@ function DTInv_buildQrLabelSheet_() {
   var rows = labels.map(function (loc, index) {
     var rowNumber = index + 2;
     var text = [
-      loc.room,
-      loc.storageId || loc.specificLocation,
+      'D&T Inventory',
+      'Room: ' + loc.room,
+      'Storage Code: ' + (loc.routeLoc || loc.locationCode || loc.storageId || loc.specificLocation),
       loc.storageLabel || '',
       'Scan to view inventory'
     ].filter(Boolean).join('\n');
@@ -578,8 +579,8 @@ function DTInv_createReadinessReport_() {
         else if (!DTInv_isValidQrLink_(qrLink, room)) DTInv_addIssue_(issues, 'WARN', rowNumber, 'QR_LINK_INVALID', 'QR link is not a valid deployed /exec storage URL.', room, loc, itemId, itemName, 'Run Refresh QR Links.');
         if (room.toLowerCase() === DTINV_CONFIG.ROLLOUT_ROOM.toLowerCase()) {
           rolloutLocations[locKey] = true;
-          if (storageId) rolloutStorageIds[storageId] = true;
-          if (!storageId) DTInv_addIssue_(issues, 'WARN', rowNumber, '419A_MISSING_STORAGE_ID', '419A rows should use Storage ID where possible.', room, loc, itemId, itemName, 'Import/enrich from the 419A storage master.');
+          if (locationCode || storageId) rolloutStorageIds[locationCode || storageId] = true;
+          if (!locationCode && !storageId) DTInv_addIssue_(issues, 'WARN', rowNumber, '419A_MISSING_STORAGE_CODE', '419A rows should use Location Code where possible.', room, loc, itemId, itemName, 'Import/enrich from the 419A storage master.');
         }
       }
 
@@ -715,7 +716,9 @@ function DTInv_import419AStorageMasterFromSource_(sourceSpreadsheetId) {
     if (map.locationCode !== -1) row[map.locationCode] = meta.locationCode;
     if (map.storageId !== -1) row[map.storageId] = meta.storageId;
     if (map.storageLabel !== -1) row[map.storageLabel] = meta.storageLabel;
-    if (map.qrLink !== -1) row[map.qrLink] = DTInv_buildLocationUrl_(baseUrl, meta.room, meta.storageId);
+    if (map.qrLink !== -1) {
+      row[map.qrLink] = DTInv_buildLocationUrl_(baseUrl, meta.room, DTInv_preferredRouteLocation_(meta.room, meta.displayLocation, meta.storageId, meta.storageLabel, meta.locationCode));
+    }
     rows.push(row);
     keys.forEach(function (key) { existing[key] = true; });
   });
@@ -734,7 +737,7 @@ function DTInv_enrichExistingStorageRows_(sheet, values, map, rowIndexes, meta, 
     changed = DTInv_setBlankCell_(sheet, row, rowIndex, map.storageId, meta.storageId) || changed;
     changed = DTInv_setBlankCell_(sheet, row, rowIndex, map.storageLabel, meta.storageLabel) || changed;
     if (map.qrLink !== -1 && !DTInv_clean_(row[map.qrLink])) {
-      var routeLoc = meta.storageId || DTInv_clean_(row[map.location]) || meta.displayLocation;
+      var routeLoc = DTInv_preferredRouteLocation_(meta.room, DTInv_clean_(row[map.location]) || meta.displayLocation, meta.storageId, meta.storageLabel, meta.locationCode);
       changed = DTInv_setBlankCell_(sheet, row, rowIndex, map.qrLink, DTInv_buildLocationUrl_(baseUrl, meta.room, routeLoc)) || changed;
     }
     if (changed) enriched += 1;
@@ -806,7 +809,7 @@ function DTInv_import419AReadyFromSource_(sourceSpreadsheetId) {
     if (targetMap.locationCode !== -1) row[targetMap.locationCode] = locationCode;
     if (targetMap.storageId !== -1) row[targetMap.storageId] = storageId;
     if (targetMap.storageLabel !== -1) row[targetMap.storageLabel] = storageLabel;
-    if (targetMap.qrLink !== -1) row[targetMap.qrLink] = DTInv_buildLocationUrl_(baseUrl, room, storageId || storageLabel || locationCode || loc);
+    if (targetMap.qrLink !== -1) row[targetMap.qrLink] = DTInv_buildLocationUrl_(baseUrl, room, DTInv_preferredRouteLocation_(room, loc, storageId, storageLabel, locationCode));
     rows.push(row);
     keys.forEach(function (key) { existing[key] = true; });
   }
@@ -828,7 +831,7 @@ function DTInv_getDiagnostics_() {
     inventorySheetName: sheet.getName(),
     dataRows: Math.max(sheet.getLastRow() - 1, 0),
     webAppBaseUrl: webUrl,
-    webAppBaseUrlSource: PropertiesService.getScriptProperties().getProperty(DTINV_CONFIG.WEB_APP_BASE_URL_PROPERTY) ? 'Script Property' : 'default @8',
+    webAppBaseUrlSource: PropertiesService.getScriptProperties().getProperty(DTINV_CONFIG.WEB_APP_BASE_URL_PROPERTY) ? 'Script Property' : 'default @12',
     missingRequired: DTInv_missingColumns_(map, DTINV_CONFIG.REQUIRED_COLUMNS),
     missingOptional: DTInv_missingColumns_(map, DTINV_CONFIG.OPTIONAL_COLUMNS)
   };
@@ -851,7 +854,7 @@ function DTInv_get419AReadinessSummary_() {
     if (room.toLowerCase() !== DTINV_CONFIG.ROLLOUT_ROOM.toLowerCase()) continue;
     var locKey = DTInv_locationKey_(row, map);
     locations[locKey] = true;
-    if (DTInv_optional_(row, map.storageId)) withStorage[locKey] = true;
+    if (DTInv_optional_(row, map.locationCode) || DTInv_optional_(row, map.storageId)) withStorage[locKey] = true;
     if (DTInv_isValidQrLink_(DTInv_optional_(row, map.qrLink), room)) qrReady[locKey] = true;
     var isItem = !DTInv_isPlaceholderRow_(row, map) && !!(DTInv_clean_(row[map.itemId]) || DTInv_clean_(row[map.itemName]));
     if (isItem) itemRows += 1;
@@ -932,7 +935,7 @@ function DTInv_collectLocations_(values, map, baseUrl) {
     var key = DTInv_locationKeyFromValues_(room, loc, storageId, storageLabel, locationCode);
     var existing = byKey[key];
     if (!existing) {
-      var routeLoc = storageId || storageLabel || locationCode || loc;
+      var routeLoc = DTInv_preferredRouteLocation_(room, loc, storageId, storageLabel, locationCode);
       var viewUrl = DTInv_buildLocationUrl_(baseUrl, room, routeLoc);
       existing = {
         room: room,
@@ -940,6 +943,7 @@ function DTInv_collectLocations_(values, map, baseUrl) {
         storageId: storageId,
         storageLabel: storageLabel,
         locationCode: locationCode,
+        routeLoc: routeLoc,
         storageType: storageType,
         viewUrl: viewUrl,
         techUrl: viewUrl + '&mode=tech',
@@ -1069,6 +1073,13 @@ function DTInv_getWebAppBaseUrl_() {
 
 function DTInv_buildLocationUrl_(baseUrl, room, loc) {
   return String(baseUrl).replace(/[?#].*$/, '') + '?room=' + encodeURIComponent(room) + '&loc=' + encodeURIComponent(loc);
+}
+
+function DTInv_preferredRouteLocation_(room, loc, storageId, storageLabel, locationCode) {
+  if (DTInv_clean_(room).toLowerCase() === DTINV_CONFIG.ROLLOUT_ROOM.toLowerCase() && locationCode) {
+    return locationCode;
+  }
+  return storageId || storageLabel || locationCode || loc;
 }
 
 function DTInv_isValidQrLink_(url, room) {

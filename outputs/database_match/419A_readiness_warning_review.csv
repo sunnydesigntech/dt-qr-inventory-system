@@ -1,0 +1,6 @@
+Warning type,Count,Example row/item,Severity,Fix now / defer / data-owner decision,Recommended action
+CHEMICAL_SAFETY_NOTE_MISSING,2,row 4 / Acetone (Highly Flammable) / Chemical Cabinet,Warning,Fix before full rollout,Add Safety Note or Remarks before chemical storage rollout.
+CHEMICAL_SDS_LINK_MISSING,23,row 4 / Acetone (Highly Flammable) / Chemical Cabinet,Warning,Fix before full rollout,Attach SDS Link or mark SDS unavailable after safety review.
+LOW_STOCK_REORDER_LEVEL_MISSING,3,row 4 / Acetone (Highly Flammable) / Chemical Cabinet,Warning,Fix before full rollout,Add Reorder Level for purchasing review.
+419A_MISSING_STORAGE_CODE,3,row 4 / Acetone (Highly Flammable) / Chemical Cabinet,Warning,Fix before full rollout,Map legacy row to current 419A Location Code or archive legacy row.
+MAINTENANCE_DETAIL_MISSING,1,row 6 / Laser Pro machine / Workshop floor,Warning,Fix before full rollout,Add Maintenance Due or technician remark.
