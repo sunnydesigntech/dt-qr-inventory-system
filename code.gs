@@ -1,6 +1,12 @@
 /**
  * D&T QR Inventory System
- * Standalone single-file Google Apps Script web app.
+ * Standalone Google Apps Script web app using HtmlService templates.
+ *
+ * Runtime files:
+ * - code.gs
+ * - index.html
+ * - app_styles.html
+ * - app_script.html
  *
  * Required Script Properties:
  * - SPREADSHEET_ID
@@ -12,6 +18,8 @@ const CONFIG = Object.freeze({
   APP_TITLE: 'D&T QR Inventory System',
   HEADER_ROW: 1,
   DEFAULT_SHEET_NAME: 'Inventory',
+  DEFAULT_SPREADSHEET_ID: '1GqK9XsPdTiPREhVXLeexreZ7cCfZJJ7FNueotpSZpqM',
+  DEFAULT_WEB_APP_BASE_URL: 'https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec',
   SPREADSHEET_ID_PROPERTY: 'SPREADSHEET_ID',
   WEB_APP_URL_PROPERTY: 'WEB_APP_BASE_URL',
   INVENTORY_SHEET_NAME_PROPERTY: 'INVENTORY_SHEET_NAME',
@@ -21,6 +29,8 @@ const CONFIG = Object.freeze({
   QUICKCHART_QR_BASE: 'https://quickchart.io/qr?size=220&text=',
   IMPORT_READY_SHEET_NAMES: ['419A_App_Load_Ready', '419A App Load Ready', '419AAppLoadReady'],
   STORAGE_MASTER_SHEET_NAMES: ['419A_Storage_Master', '419A Storage Master', '419AStorageMaster', 'Room_QR_Label_Plan', 'RM 419A 2026'],
+  STORAGE_MASTER_SHEET_NAME: 'Storage_Master',
+  AUDIT_LOG_SHEET_NAME: 'Audit_Log',
   QR_LABEL_SHEET_NAME: 'QR_Labels',
   READINESS_REPORT_SHEET_NAME: 'Inventory_Readiness_Report',
   DEBUG_PANEL: false,
@@ -44,10 +54,40 @@ const CONFIG = Object.freeze({
     remarks: ['remarks', 'remark', 'notes', 'note'],
     locationCode: ['location code', 'locationcode', 'location id'],
     storageId: ['storage id', 'storageid', 'storage_id'],
-    storageLabel: ['storage label', 'storagelabel', 'storage_label']
+    storageLabel: ['storage label', 'storagelabel', 'storage_label'],
+    storageType: ['storage type', 'storagetype', 'storage_type'],
+    lastUpdated: ['last updated', 'lastupdated', 'updated at', 'updated date'],
+    updatedBy: ['updated by', 'updatedby'],
+    isPlaceholder: ['is placeholder', 'isplaceholder', 'placeholder'],
+    safetyNote: ['safety note', 'safetynote', 'safety notes', 'hazard note'],
+    reorderLevel: ['reorder level', 'reorderlevel', 'minimum stock', 'minimum qty', 'min qty'],
+    supplier: ['supplier', 'vendor'],
+    purchaseLink: ['purchase link', 'purchaselink', 'purchase url', 'supplier link'],
+    assetValue: ['asset value', 'assetvalue', 'unit cost', 'value'],
+    maintenanceDue: ['maintenance due', 'maintenancedue', 'service due', 'next service'],
+    sdsLink: ['sds link', 'sds', 'safety data sheet', 'safety data sheet link']
   },
   REQUIRED_COLUMNS: ['itemId', 'itemName', 'room', 'location', 'qty', 'category', 'status'],
-  OPTIONAL_COLUMNS: ['qrLink', 'qrImage', 'unit', 'remarks', 'locationCode', 'storageId', 'storageLabel'],
+  OPTIONAL_COLUMNS: [
+    'qrLink',
+    'qrImage',
+    'unit',
+    'remarks',
+    'locationCode',
+    'storageId',
+    'storageLabel',
+    'storageType',
+    'lastUpdated',
+    'updatedBy',
+    'isPlaceholder',
+    'safetyNote',
+    'reorderLevel',
+    'supplier',
+    'purchaseLink',
+    'assetValue',
+    'maintenanceDue',
+    'sdsLink'
+  ],
   COLUMN_LABELS: {
     itemId: 'Item ID',
     itemName: 'Item Name',
@@ -62,24 +102,35 @@ const CONFIG = Object.freeze({
     locationCode: 'Location Code',
     storageId: 'Storage ID',
     storageLabel: 'Storage Label',
-    qrImage: 'QR Code Image'
+    qrImage: 'QR Code Image',
+    storageType: 'Storage Type',
+    lastUpdated: 'Last Updated',
+    updatedBy: 'Updated By',
+    isPlaceholder: 'Is Placeholder',
+    safetyNote: 'Safety Note',
+    reorderLevel: 'Reorder Level',
+    supplier: 'Supplier',
+    purchaseLink: 'Purchase Link',
+    assetValue: 'Asset Value',
+    maintenanceDue: 'Maintenance Due',
+    sdsLink: 'SDS Link'
   }
 });
 
 function doGet(e) {
   const params = getRequestParams_(e);
-  let bootstrap;
+  const payload = buildClientPayload_(params);
 
-  try {
-    bootstrap = buildBootstrapData_(params);
-  } catch (err) {
-    bootstrap = buildErrorBootstrap_(params, err);
-  }
+  const template = HtmlService.createTemplateFromFile('index');
+  template.bootstrapJson = JSON.stringify(payload);
 
-  return HtmlService
-    .createHtmlOutput(buildPageHtml_(params, bootstrap))
+  return template.evaluate()
     .setTitle(CONFIG.APP_TITLE)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
 function onOpen() {
@@ -89,6 +140,7 @@ function onOpen() {
     .addItem('Refresh QR Images (Optional)', 'menuRefreshQrImages')
     .addSeparator()
     .addItem('Prepare App Columns', 'menuPrepareAppColumns')
+    .addItem('Build Storage Master', 'menuBuildStorageMasterSheet')
     .addItem('Build QR Label Sheet', 'menuBuildQrLabelSheet')
     .addItem('Create Readiness Report', 'menuCreateReadinessReport')
     .addSeparator()
@@ -151,6 +203,20 @@ function menuPrepareAppColumns() {
     );
   } catch (err) {
     ui.alert('Prepare Columns Failed', err.message || String(err), ui.ButtonSet.OK);
+  }
+}
+
+function menuBuildStorageMasterSheet() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const result = buildStorageMasterSheet();
+    ui.alert(
+      'Storage Master Ready',
+      'Created/updated "' + result.sheetName + '" with ' + result.storageCount + ' storage row(s).',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('Storage Master Failed', err.message || String(err), ui.ButtonSet.OK);
   }
 }
 
@@ -336,13 +402,14 @@ function showConfigStatus() {
   });
 
   const lines = [
-    'SPREADSHEET_ID: ' + (status.scriptProperties.spreadsheetIdConfigured ? 'configured' : 'missing'),
-    'WEB_APP_BASE_URL: ' + (status.scriptProperties.webAppBaseUrlConfigured ? 'configured' : 'missing'),
+    'SPREADSHEET_ID: ' + (status.scriptProperties.spreadsheetIdConfigured ? (status.scriptProperties.spreadsheetIdFromFallback ? 'fallback ' : 'configured ') + (status.maskedSpreadsheetId || '') : 'missing'),
+    'WEB_APP_BASE_URL: ' + (status.scriptProperties.webAppBaseUrlConfigured ? (status.scriptProperties.webAppBaseUrlFromFallback ? 'fallback/default' : 'configured') : 'missing'),
     'INVENTORY_SHEET_NAME: ' + (status.scriptProperties.inventorySheetNameConfigured ? status.scriptProperties.inventorySheetName : 'default/fallback'),
     'Sheet in use: ' + (status.sheetInUse || '-'),
     'Data rows: ' + (typeof status.dataRows === 'number' ? status.dataRows : '-'),
     'Missing required columns: ' + (missingRequired.length ? missingRequired.join(', ') : 'none'),
     'Optional columns found: ' + (optionalFound.length ? optionalFound.join(', ') : 'none'),
+    'Available sheets: ' + ((status.availableSheetNames || []).join(', ') || '-'),
     'Header preview: ' + ((status.headerPreview || []).slice(0, 12).join(', ') || '-')
   ];
 
@@ -350,14 +417,17 @@ function showConfigStatus() {
     lines.push('419A locations/items: ' + status.rollout419A.locationCount + ' location(s), ' + status.rollout419A.itemRows + ' item row(s)');
   }
   if (status.sheetError) lines.push('Sheet/config error: ' + status.sheetError);
+  if (status.nextAction) lines.push('Next action: ' + status.nextAction);
   ui.alert('D&T Inventory Diagnostics', lines.join('\n'), ui.ButtonSet.OK);
 }
 
 function getRequestParams_(e) {
+  const admin = cleanString_(e && e.parameter && e.parameter.admin).toLowerCase();
   return {
     room: cleanString_(e && e.parameter && e.parameter.room),
     loc: cleanString_(e && e.parameter && e.parameter.loc),
-    mode: normalizeMode_(e && e.parameter && e.parameter.mode)
+    mode: normalizeMode_(e && e.parameter && e.parameter.mode),
+    admin: ['diagnostics', 'readiness', 'labels', 'storage', 'audit', 'lowstock', 'maintenance'].indexOf(admin) !== -1 ? admin : ''
   };
 }
 
@@ -446,6 +516,397 @@ function buildErrorBootstrap_(params, err) {
   };
 }
 
+function buildClientPayload_(params) {
+  const safeParams = params || {};
+  try {
+    const webAppBaseUrl = getWebAppBaseUrl_({ silent: true });
+    const needsDiagnostics = safeParams.admin === 'diagnostics' || safeParams.admin === 'readiness';
+    const dataset = getInventoryDataset_();
+    const validation = safeParams.admin === 'readiness' ? validateInventoryData_() : null;
+    const diagnostics = needsDiagnostics ? getDiagnostics_() : getLightDiagnostics_();
+    const appData = buildClientAppData_(dataset, webAppBaseUrl, {
+      validation: validation,
+      audit: readRecentAuditEvents_(25)
+    });
+    const route = buildClientRoute_(safeParams, appData.locations);
+    return {
+      appTitle: CONFIG.APP_TITLE,
+      webAppBaseUrl: webAppBaseUrl,
+      route: route,
+      error: '',
+      warnings: webAppBaseUrl ? [] : ['WEB_APP_BASE_URL is not configured. In-app browsing still works; QR generation and external links are disabled until it is set.'],
+      diagnostics: buildClientDiagnostics_(diagnostics),
+      appData: appData
+    };
+  } catch (err) {
+    return buildClientErrorPayload_(safeParams, err);
+  }
+}
+
+function buildClientErrorPayload_(params, err) {
+  const message = err && err.message ? err.message : 'Unexpected application error.';
+  return {
+    appTitle: CONFIG.APP_TITLE,
+    webAppBaseUrl: getWebAppBaseUrl_({ silent: true }),
+    route: { name: 'error', kind: 'generic', message: message },
+    error: message,
+    warnings: [],
+    diagnostics: buildClientDiagnostics_(getDiagnosticsSafe_()),
+    appData: buildEmptyClientAppData_()
+  };
+}
+
+function buildEmptyClientAppData_() {
+  return {
+    metrics: {
+      totalRooms: 0,
+      totalLocations: 0,
+      totalItems: 0,
+      totalChemicals: 0,
+      totalAttention: 0
+    },
+    rooms: [],
+    locations: [],
+    items: {},
+    readiness: {
+      score: 0,
+      errors: 1,
+      warnings: 0,
+      missingQr: 0,
+      missingStorageId: 0,
+      invalidQty: 0,
+      invalidStatus: 0,
+      duplicates: 0,
+      rollout419A: {
+        ready: 0,
+        total: 0,
+        pct: 0,
+        itemCount: 0,
+        chemicalCount: 0
+      }
+    },
+    audit: []
+  };
+}
+
+function buildClientAppData_(dataset, webAppBaseUrl, options) {
+  const opts = options || {};
+  const map = dataset.map;
+  const values = dataset.values;
+  const locationsByKey = {};
+  const locations = [];
+  const itemsByLocation = {};
+  const roomsByCode = {};
+  const roomOrder = [];
+  const metrics = {
+    totalRooms: 0,
+    totalLocations: 0,
+    totalItems: 0,
+    totalChemicals: 0,
+    totalAttention: 0
+  };
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const room = cleanString_(row[map.room]);
+    const loc = cleanString_(row[map.location]);
+    if (!room || !loc) continue;
+
+    const entry = buildLocationEntry_(row, map, room, loc);
+    let location = locationsByKey[entry.canonicalKey];
+    if (!location) {
+      location = buildClientLocation_(entry, row, map, webAppBaseUrl);
+      locationsByKey[entry.canonicalKey] = location;
+      locations.push(location);
+      itemsByLocation[entry.canonicalKey] = [];
+      ensureClientRoom_(roomsByCode, roomOrder, room);
+      roomsByCode[room].locationCount += 1;
+    }
+
+    if (map.qrLink !== -1 && getOptionalValue_(row, map.qrLink)) {
+      location.qrReady = isValidQrLink_(getOptionalValue_(row, map.qrLink), room);
+    }
+
+    if (!isInventoryItemRow_(row, map)) continue;
+
+    const item = buildClientItem_(row, map, i + 1, room, loc);
+    itemsByLocation[entry.canonicalKey].push(item);
+    location.items += 1;
+    location.itemCount = location.items;
+    if (item.status !== 'Good') {
+      location.attention += 1;
+      location.attentionCount = location.attention;
+    }
+    if (item.hazard) {
+      location.hazard = true;
+      location.chemicalCount += 1;
+    }
+
+    ensureClientRoom_(roomsByCode, roomOrder, room);
+    roomsByCode[room].itemCount += 1;
+    if (item.hazard) roomsByCode[room].chemicalCount += 1;
+    if (item.status !== 'Good') {
+      roomsByCode[room].attention += 1;
+      roomsByCode[room].attentionCount = roomsByCode[room].attention;
+    }
+  }
+
+  locations.sort(function (a, b) {
+    return a.sortKey.localeCompare(b.sortKey);
+  });
+
+  Object.keys(itemsByLocation).forEach(function (key) {
+    itemsByLocation[key].sort(function (a, b) {
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  });
+
+  roomOrder.sort(function (a, b) {
+    if (a === CONFIG.ROLLOUT_ROOM) return -1;
+    if (b === CONFIG.ROLLOUT_ROOM) return 1;
+    return a.localeCompare(b);
+  });
+
+  metrics.totalRooms = roomOrder.length;
+  metrics.totalLocations = locations.length;
+  metrics.totalItems = locations.reduce(function (sum, location) { return sum + (location.itemCount || location.items || 0); }, 0);
+  metrics.totalChemicals = locations.reduce(function (sum, location) { return sum + (location.chemicalCount || 0); }, 0);
+  metrics.totalAttention = locations.reduce(function (sum, location) { return sum + (location.attentionCount || location.attention || 0); }, 0);
+
+  return {
+    metrics: metrics,
+    rooms: roomOrder.map(function (room) { return roomsByCode[room]; }),
+    locations: locations,
+    items: itemsByLocation,
+    readiness: buildClientReadiness_(locations, itemsByLocation, opts.validation),
+    audit: opts.audit || []
+  };
+}
+
+function ensureClientRoom_(roomsByCode, roomOrder, room) {
+  if (roomsByCode[room]) return;
+  roomsByCode[room] = {
+    code: room,
+    name: getClientRoomName_(room),
+    rollout: room.toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase(),
+    locationCount: 0,
+    itemCount: 0,
+    chemicalCount: 0,
+    attention: 0,
+    attentionCount: 0
+  };
+  roomOrder.push(room);
+}
+
+function getClientRoomName_(room) {
+  if (room.toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase()) return 'D&T Workshop 419A';
+  if (room.toLowerCase() === 'v++') return 'V++ Maker Studio';
+  return 'Room ' + room;
+}
+
+function buildClientLocation_(entry, row, map, webAppBaseUrl) {
+  const displayId = entry.storageId || entry.routeLoc || entry.loc;
+  const relativeViewUrl = buildLocationHref_('', entry.room, entry.routeLoc, 'view');
+  const absoluteViewUrl = webAppBaseUrl ? buildLocationUrl_(webAppBaseUrl, entry.room, entry.routeLoc) : '';
+  const viewUrl = relativeViewUrl;
+  return {
+    key: entry.canonicalKey,
+    id: displayId,
+    room: entry.room,
+    label: entry.displayLoc || entry.loc,
+    specific: entry.loc,
+    code: entry.locationCode,
+    storageId: entry.storageId,
+    storageLabel: entry.storageLabel,
+    storageType: entry.storageType,
+    lastChecked: getOptionalValue_(row, map.lastUpdated),
+    notes: getOptionalValue_(row, map.remarks),
+    routeLoc: entry.routeLoc,
+    searchText: entry.searchText,
+    sortKey: entry.sortKey,
+    items: 0,
+    itemCount: 0,
+    attention: 0,
+    attentionCount: 0,
+    chemicalCount: 0,
+    hazard: false,
+    qrReady: map.qrLink !== -1 && isValidQrLink_(getOptionalValue_(row, map.qrLink), entry.room),
+    viewUrl: viewUrl,
+    techUrl: buildLocationHref_('', entry.room, entry.routeLoc, 'tech'),
+    absoluteViewUrl: absoluteViewUrl,
+    absoluteTechUrl: absoluteViewUrl ? absoluteViewUrl + '&mode=tech' : '',
+    qrImageUrl: absoluteViewUrl ? CONFIG.QUICKCHART_QR_BASE + encodeURIComponent(absoluteViewUrl) : ''
+  };
+}
+
+function buildClientItem_(row, map, sheetRow, room, loc) {
+  const category = cleanString_(row[map.category]);
+  const status = normalizeStatus_(row[map.status]);
+  return {
+    sheetRow: sheetRow,
+    id: cleanString_(row[map.itemId]),
+    name: cleanString_(row[map.itemName]) || '(Unnamed item)',
+    room: room,
+    specificLocation: loc,
+    category: category,
+    qty: toNonNegativeNumber_(row[map.qty]),
+    unit: getOptionalValue_(row, map.unit),
+    status: status,
+    remarks: getOptionalValue_(row, map.remarks),
+    safetyNote: getOptionalValue_(row, map.safetyNote),
+    reorderLevel: getOptionalValue_(row, map.reorderLevel),
+    supplier: getOptionalValue_(row, map.supplier),
+    purchaseLink: getOptionalValue_(row, map.purchaseLink),
+    assetValue: getOptionalValue_(row, map.assetValue),
+    maintenanceDue: getOptionalValue_(row, map.maintenanceDue),
+    sdsLink: getOptionalValue_(row, map.sdsLink),
+    lastUpdated: getOptionalValue_(row, map.lastUpdated),
+    updatedBy: getOptionalValue_(row, map.updatedBy),
+    storageId: getOptionalValue_(row, map.storageId),
+    storageLabel: getOptionalValue_(row, map.storageLabel),
+    locationCode: getOptionalValue_(row, map.locationCode),
+    hazard: isHazardCategory_(category)
+  };
+}
+
+function buildClientRoute_(params, locations) {
+  if (params && params.admin === 'labels') {
+    return { name: 'labels', admin: 'labels' };
+  }
+  if (params && params.admin === 'storage') {
+    return { name: 'storage', admin: 'storage' };
+  }
+  if (params && params.admin === 'audit') {
+    return { name: 'audit', admin: 'audit' };
+  }
+  if (params && params.admin === 'lowstock') {
+    return { name: 'lowstock', admin: 'lowstock' };
+  }
+  if (params && params.admin === 'maintenance') {
+    return { name: 'maintenance', admin: 'maintenance' };
+  }
+  if (params && (params.admin === 'diagnostics' || params.admin === 'readiness')) {
+    return { name: 'admin', admin: params.admin };
+  }
+  if (!(params && params.room && params.loc)) {
+    return { name: 'landing' };
+  }
+
+  const location = findClientLocation_(locations, params.room, params.loc);
+  if (!location) {
+    return {
+      name: 'error',
+      kind: 'no-match',
+      message: 'No matching storage location was found for this room/location.'
+    };
+  }
+
+  return {
+    name: 'location',
+    locKey: location.key,
+    mode: params.mode === 'tech' ? 'tech' : 'view'
+  };
+}
+
+function findClientLocation_(locations, room, loc) {
+  const roomNeedle = cleanString_(room).toLowerCase();
+  const locNeedle = cleanString_(loc).toLowerCase();
+  return locations.filter(function (entry) {
+    if (entry.room.toLowerCase() !== roomNeedle) return false;
+    return [
+      entry.routeLoc,
+      entry.id,
+      entry.storageId,
+      entry.storageLabel,
+      entry.code,
+      entry.specific,
+      entry.label
+    ].filter(Boolean).map(function (value) {
+      return cleanString_(value).toLowerCase();
+    }).indexOf(locNeedle) !== -1;
+  })[0] || null;
+}
+
+function buildClientReadiness_(locations, itemsByLocation, validation) {
+  const hasValidation = !!validation;
+  const validationResult = validation || { issues: [], errorCount: 0, warningCount: 0 };
+
+  const issues = validationResult.issues || [];
+  const rolloutLocations = locations.filter(function (location) {
+    return location.room.toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase();
+  });
+  const ready419A = rolloutLocations.filter(function (location) {
+    return !!(location.storageId && location.qrReady);
+  }).length;
+  const rolloutItemCount = rolloutLocations.reduce(function (sum, location) {
+    return sum + location.items;
+  }, 0);
+  const rolloutChemicalCount = rolloutLocations.reduce(function (sum, location) {
+    return sum + (itemsByLocation[location.key] || []).filter(function (item) { return item.hazard; }).length;
+  }, 0);
+  const warningCount = hasValidation ? (validationResult.warningCount || issues.filter(function (issue) { return issue.severity !== 'ERROR'; }).length) : 0;
+  const errorCount = hasValidation ? (validationResult.errorCount || issues.filter(function (issue) { return issue.severity === 'ERROR'; }).length) : 0;
+
+  return {
+    score: Math.max(0, Math.min(100, 100 - (errorCount * 18) - (warningCount * 3))),
+    errors: errorCount,
+    warnings: warningCount,
+    missingQr: locations.filter(function (location) { return !location.qrReady; }).length,
+    missingStorageId: rolloutLocations.filter(function (location) { return !location.storageId; }).length,
+    invalidQty: countClientIssues_(issues, 'INVALID_QTY'),
+    invalidStatus: countClientIssues_(issues, 'INVALID_STATUS'),
+    duplicates: countClientIssues_(issues, 'POSSIBLE_DUPLICATE_ITEM'),
+    validationLoaded: hasValidation,
+    issueSample: issues.slice(0, 20),
+    rollout419A: {
+      ready: ready419A,
+      total: rolloutLocations.length,
+      pct: rolloutLocations.length ? Math.round((ready419A / rolloutLocations.length) * 100) : 0,
+      itemCount: rolloutItemCount,
+      chemicalCount: rolloutChemicalCount
+    }
+  };
+}
+
+function countClientIssues_(issues, issueName) {
+  return (issues || []).filter(function (issue) {
+    return issue.issue === issueName;
+  }).length;
+}
+
+function buildClientDiagnostics_(status) {
+  const safeStatus = status || {};
+  const props = safeStatus.scriptProperties || {};
+  const required = safeStatus.requiredColumns || {};
+  const optional = safeStatus.optionalColumns || {};
+  const missingRequired = safeStatus.missingRequiredColumns || CONFIG.REQUIRED_COLUMNS.filter(function (key) {
+    return String(required[key] || '').indexOf('found') !== 0;
+  }).map(function (key) { return CONFIG.COLUMN_LABELS[key]; });
+
+  return {
+    spreadsheetIdSet: !!props.spreadsheetIdConfigured,
+    spreadsheetIdSource: props.spreadsheetIdFromFallback ? 'fallback' : (props.spreadsheetIdPropertySet ? 'Script Property' : 'missing'),
+    spreadsheetMaskedId: safeStatus.maskedSpreadsheetId || '',
+    webAppBaseUrlSet: !!props.webAppBaseUrlConfigured,
+    webAppBaseUrlSource: props.webAppBaseUrlFromFallback ? 'fallback' : (props.webAppBaseUrlPropertySet ? 'Script Property' : 'missing'),
+    inventorySheetNameSet: !!props.inventorySheetNameConfigured,
+    sheetFound: !!safeStatus.sheetInUse && !safeStatus.sheetError,
+    sheetInUse: safeStatus.sheetInUse ? safeStatus.sheetInUse + ' · ' + (safeStatus.dataRows || 0) + ' rows' : '',
+    sheetName: safeStatus.sheetInUse || '',
+    dataRows: safeStatus.dataRows || 0,
+    requiredColumnsOk: missingRequired.length === 0 && !safeStatus.sheetError,
+    missingRequiredColumns: missingRequired,
+    qrImageColumn: String(optional.qrImage || '').indexOf('found') === 0,
+    requiredColumns: required,
+    optionalColumns: optional,
+    headerPreview: safeStatus.headerPreview || [],
+    availableSheets: safeStatus.availableSheets || [],
+    sheetError: safeStatus.sheetError || '',
+    nextAction: safeStatus.nextAction || '',
+    raw: safeStatus
+  };
+}
+
 function getInventoryData(params) {
   const room = cleanString_(params && params.room);
   const loc = cleanString_(params && params.loc);
@@ -526,6 +987,9 @@ function saveInventoryUpdates(payload) {
   const locNeedle = loc.toLowerCase();
   const lastRow = values.length;
   const seen = {};
+  const actor = getActiveUserEmail_();
+  const timestamp = new Date();
+  const auditEvents = [];
 
   payload.updates.forEach(function (update) {
     const rowNum = Number(update.sheetRow);
@@ -556,9 +1020,37 @@ function saveInventoryUpdates(payload) {
       throw new Error('Invalid status for row ' + rowNum + ': ' + cleanString_(update.status));
     }
 
+    const oldQty = row[map.qty];
+    const oldStatus = normalizeStatus_(row[map.status]);
+    const oldQtyText = cleanString_(oldQty);
+    const newQtyText = cleanString_(qty);
+    const changed = oldQtyText !== newQtyText || oldStatus !== status;
+
     sheet.getRange(rowNum, map.qty + 1).setValue(qty);
     sheet.getRange(rowNum, map.status + 1).setValue(status);
+    if (map.lastUpdated !== -1) sheet.getRange(rowNum, map.lastUpdated + 1).setValue(timestamp);
+    if (map.updatedBy !== -1) sheet.getRange(rowNum, map.updatedBy + 1).setValue(actor);
+
+    if (changed) {
+      auditEvents.push({
+        timestamp: timestamp,
+        user: actor,
+        action: 'Update stock',
+        room: cleanString_(row[map.room]),
+        storageId: getOptionalValue_(row, map.storageId),
+        location: cleanString_(row[map.location]),
+        itemId: cleanString_(row[map.itemId]),
+        itemName: cleanString_(row[map.itemName]),
+        oldQty: oldQty,
+        newQty: qty,
+        oldStatus: oldStatus,
+        newStatus: status,
+        notes: 'Update Mode save'
+      });
+    }
   });
+
+  appendAuditEvents_(auditEvents);
 
   const refreshedRows = getInventoryRowsForLocation_(room, loc);
   return {
@@ -658,6 +1150,7 @@ function buildLocationEntry_(row, map, room, loc) {
   const storageId = getOptionalValue_(row, map.storageId);
   const storageLabel = getOptionalValue_(row, map.storageLabel);
   const locationCode = getOptionalValue_(row, map.locationCode);
+  const storageType = getOptionalValue_(row, map.storageType);
   const identity = buildLocationIdentity_(room, loc, storageId, storageLabel, locationCode);
 
   return {
@@ -667,15 +1160,31 @@ function buildLocationEntry_(row, map, room, loc) {
     locationCode: locationCode,
     storageId: storageId,
     storageLabel: storageLabel,
+    storageType: storageType,
     routeLoc: identity.routeLoc,
     canonicalKey: identity.key,
-    searchText: [room, loc, storageLabel, storageId, locationCode].filter(Boolean).join(' ').toLowerCase(),
+    searchText: [room, loc, storageLabel, storageId, locationCode, storageType].filter(Boolean).join(' ').toLowerCase(),
     sortKey: [room, storageId || '', storageLabel || '', locationCode || '', loc].join(' | ').toLowerCase()
   };
 }
 
 function isInventoryItemRow_(row, map) {
+  if (isPlaceholderRow_(row, map)) return false;
   return !!(cleanString_(row[map.itemId]) || cleanString_(row[map.itemName]));
+}
+
+function isPlaceholderRow_(row, map) {
+  const explicitPlaceholder = getOptionalValue_(row, map.isPlaceholder).toLowerCase();
+  if (['true', 'yes', 'y', '1', 'placeholder'].indexOf(explicitPlaceholder) !== -1) return true;
+
+  const category = getOptionalValue_(row, map.category).toLowerCase();
+  const remarks = getOptionalValue_(row, map.remarks).toLowerCase();
+  const itemId = getOptionalValue_(row, map.itemId);
+  const itemName = getOptionalValue_(row, map.itemName);
+  return category === 'storage' &&
+    remarks.indexOf('placeholder row for qr/location page') !== -1 &&
+    !itemId &&
+    !itemName;
 }
 
 function rowMatchesRoomLoc_(rowValues, map, roomNeedle, locNeedle) {
@@ -697,6 +1206,14 @@ function rowMatchesRoomLoc_(rowValues, map, roomNeedle, locNeedle) {
   return false;
 }
 
+function isValidQrLink_(url, room) {
+  const value = cleanString_(url);
+  if (!value) return false;
+  if (!/^https:\/\/script\.google\.com\//.test(value)) return false;
+  if (cleanString_(room) === 'V++' && value.indexOf('room=V%2B%2B') === -1) return false;
+  return value.indexOf('/exec?') !== -1 && value.indexOf('room=') !== -1 && value.indexOf('loc=') !== -1;
+}
+
 function buildInventoryRowView_(sourceRow, map, sheetRow, category, roomVal, locVal) {
   const status = normalizeStatus_(sourceRow[map.status]);
   const storageId = getOptionalValue_(sourceRow, map.storageId);
@@ -713,6 +1230,13 @@ function buildInventoryRowView_(sourceRow, map, sheetRow, category, roomVal, loc
     status: status,
     unit: getOptionalValue_(sourceRow, map.unit),
     remarks: getOptionalValue_(sourceRow, map.remarks),
+    safetyNote: getOptionalValue_(sourceRow, map.safetyNote),
+    reorderLevel: getOptionalValue_(sourceRow, map.reorderLevel),
+    supplier: getOptionalValue_(sourceRow, map.supplier),
+    purchaseLink: getOptionalValue_(sourceRow, map.purchaseLink),
+    assetValue: getOptionalValue_(sourceRow, map.assetValue),
+    maintenanceDue: getOptionalValue_(sourceRow, map.maintenanceDue),
+    sdsLink: getOptionalValue_(sourceRow, map.sdsLink),
     locationCode: locationCode,
     storageId: storageId,
     storageLabel: storageLabel,
@@ -780,9 +1304,129 @@ function refreshQrImages() {
   return { success: true, updatedRows: updatedRows };
 }
 
+function appendAuditEvents_(events) {
+  const safeEvents = (events || []).filter(function (event) { return !!event; });
+  if (!safeEvents.length) return { success: true, appendedRows: 0 };
+
+  const ss = getSpreadsheet_();
+  const sheet = getOrCreateSheet_(ss, CONFIG.AUDIT_LOG_SHEET_NAME);
+  const headers = [
+    'Timestamp',
+    'User',
+    'Action',
+    'Room',
+    'Storage ID',
+    'Specific Location',
+    'Item ID',
+    'Item Name',
+    'Old Qty',
+    'New Qty',
+    'Old Status',
+    'New Status',
+    'Notes'
+  ];
+
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+  }
+
+  const rows = safeEvents.map(function (event) {
+    return [
+      event.timestamp,
+      event.user,
+      event.action,
+      event.room,
+      event.storageId,
+      event.location,
+      event.itemId,
+      event.itemName,
+      event.oldQty,
+      event.newQty,
+      event.oldStatus,
+      event.newStatus,
+      event.notes
+    ];
+  });
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
+  return { success: true, appendedRows: rows.length };
+}
+
+function readRecentAuditEvents_(limit) {
+  try {
+    const ss = getSpreadsheet_();
+    const sheet = ss.getSheetByName(CONFIG.AUDIT_LOG_SHEET_NAME);
+    if (!sheet || sheet.getLastRow() <= 1) return [];
+
+    const maxRows = Math.max(1, Number(limit) || 25);
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0].map(normalizeHeader_);
+    const index = function (names) {
+      const aliases = Array.isArray(names) ? names : [names];
+      for (let i = 0; i < aliases.length; i++) {
+        const needle = normalizeHeader_(aliases[i]);
+        const found = headers.indexOf(needle);
+        if (found !== -1) return found;
+      }
+      return -1;
+    };
+    const map = {
+      timestamp: index(['timestamp', 'time']),
+      user: index(['user', 'updated by']),
+      action: index('action'),
+      room: index('room'),
+      storageId: index(['storage id', 'storage']),
+      location: index(['specific location', 'location']),
+      itemId: index('item id'),
+      itemName: index('item name'),
+      oldQty: index('old qty'),
+      newQty: index('new qty'),
+      oldStatus: index('old status'),
+      newStatus: index('new status'),
+      notes: index(['notes', 'note'])
+    };
+
+    return values.slice(1).filter(function (row) {
+      return row.some(function (cell) { return cleanString_(cell); });
+    }).slice(-maxRows).reverse().map(function (row) {
+      const storage = getOptionalValue_(row, map.storageId) || getOptionalValue_(row, map.location);
+      const itemName = getOptionalValue_(row, map.itemName);
+      const itemId = getOptionalValue_(row, map.itemId);
+      return {
+        ts: getOptionalValue_(row, map.timestamp),
+        user: getOptionalValue_(row, map.user) || 'unknown user',
+        action: getOptionalValue_(row, map.action) || 'Update',
+        room: getOptionalValue_(row, map.room),
+        storage: storage,
+        storageId: getOptionalValue_(row, map.storageId),
+        location: getOptionalValue_(row, map.location),
+        item: itemName || itemId || '-',
+        itemId: itemId,
+        itemName: itemName,
+        oldQty: getOptionalValue_(row, map.oldQty),
+        newQty: getOptionalValue_(row, map.newQty),
+        oldStatus: getOptionalValue_(row, map.oldStatus),
+        newStatus: getOptionalValue_(row, map.newStatus),
+        notes: getOptionalValue_(row, map.notes)
+      };
+    });
+  } catch (err) {
+    return [];
+  }
+}
+
+function getActiveUserEmail_() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    return cleanString_(email) || 'unknown user';
+  } catch (err) {
+    return 'unknown user';
+  }
+}
+
 function ensureAppColumns_() {
-  const sheet = getInventorySheet_();
-  const desiredKeys = CONFIG.REQUIRED_COLUMNS.concat(['qrLink', 'unit', 'remarks', 'locationCode', 'storageId', 'storageLabel', 'qrImage']);
+  const sheet = getInventorySheetForPreparation_();
+  const desiredKeys = CONFIG.REQUIRED_COLUMNS.concat(CONFIG.OPTIONAL_COLUMNS);
   const desiredLabels = desiredKeys.map(function (key) { return CONFIG.COLUMN_LABELS[key]; });
   const lastColumn = Math.max(sheet.getLastColumn(), 1);
   const headerRange = sheet.getRange(CONFIG.HEADER_ROW, 1, 1, lastColumn);
@@ -810,23 +1454,159 @@ function ensureAppColumns_() {
   return { success: true, initialized: false, addedColumns: added };
 }
 
+function getInventorySheetForPreparation_() {
+  const ss = getSpreadsheet_();
+  const configuredName = cleanString_(PropertiesService.getScriptProperties().getProperty(CONFIG.INVENTORY_SHEET_NAME_PROPERTY));
+  const targetName = configuredName || CONFIG.DEFAULT_SHEET_NAME;
+  return ss.getSheetByName(targetName) || ss.insertSheet(targetName);
+}
+
+function buildStorageMasterSheet() {
+  const baseUrl = getWebAppBaseUrl_({ silent: true });
+  const locations = getAllLocations_();
+  const statsByKey = getLocationStatsByKey_();
+  const ss = getSpreadsheet_();
+  const sheet = getOrCreateSheet_(ss, CONFIG.STORAGE_MASTER_SHEET_NAME);
+  const headers = [
+    'Storage ID',
+    'Room',
+    'Storage Label',
+    'Specific Location',
+    'Location Code',
+    'Storage Type',
+    'QR Link',
+    'QR Image',
+    'Status',
+    'Notes'
+  ];
+  const rows = locations.map(function (entry, index) {
+    const stats = statsByKey[entry.canonicalKey] || {};
+    const qrLink = baseUrl ? buildLocationUrl_(baseUrl, entry.room, entry.routeLoc) : '';
+    const status = (stats.attentionCount || 0) > 0 ? 'Needs Attention' : 'Good';
+    const storageType = entry.storageType || inferStorageType_(entry, stats);
+    const notes = [
+      (stats.itemCount || 0) + ' item row(s)',
+      (stats.chemicalCount || 0) + ' chemical row(s)',
+      (stats.attentionCount || 0) + ' attention row(s)'
+    ].join('; ');
+    const rowNumber = index + 2;
+    return [
+      entry.storageId,
+      entry.room,
+      entry.storageLabel || entry.displayLoc || entry.loc,
+      entry.loc,
+      entry.locationCode,
+      storageType,
+      qrLink,
+      qrLink ? '=IMAGE("' + CONFIG.QUICKCHART_QR_BASE + '"&ENCODEURL(G' + rowNumber + '))' : '',
+      status,
+      notes
+    ];
+  });
+
+  sheet.clear();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (rows.length) {
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    const formulas = rows.map(function (row) { return [row[7]]; });
+    sheet.getRange(2, 8, rows.length, 1).setFormulas(formulas);
+  }
+  sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0f2fe');
+  sheet.setColumnWidth(1, 140);
+  sheet.setColumnWidth(2, 90);
+  sheet.setColumnWidth(3, 240);
+  sheet.setColumnWidth(4, 220);
+  sheet.setColumnWidth(5, 140);
+  sheet.setColumnWidth(6, 150);
+  sheet.setColumnWidth(7, 520);
+  sheet.setColumnWidth(8, 120);
+  sheet.setColumnWidth(9, 130);
+  sheet.setColumnWidth(10, 280);
+
+  return { success: true, sheetName: sheet.getName(), storageCount: rows.length };
+}
+
+function getLocationStatsByKey_() {
+  const dataset = getInventoryDataset_();
+  const map = dataset.map;
+  const values = dataset.values;
+  const statsByKey = {};
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const room = cleanString_(row[map.room]);
+    const loc = cleanString_(row[map.location]);
+    if (!room || !loc) continue;
+
+    const entry = buildLocationEntry_(row, map, room, loc);
+    if (!statsByKey[entry.canonicalKey]) {
+      statsByKey[entry.canonicalKey] = {
+        itemCount: 0,
+        chemicalCount: 0,
+        attentionCount: 0,
+        categories: {}
+      };
+    }
+    if (!isInventoryItemRow_(row, map)) continue;
+
+    const category = cleanString_(row[map.category]);
+    const status = normalizeStatus_(row[map.status]);
+    statsByKey[entry.canonicalKey].itemCount += 1;
+    if (category) {
+      statsByKey[entry.canonicalKey].categories[category.toLowerCase()] = true;
+    }
+    if (isHazardCategory_(category)) statsByKey[entry.canonicalKey].chemicalCount += 1;
+    if (status !== 'Good') statsByKey[entry.canonicalKey].attentionCount += 1;
+  }
+
+  return statsByKey;
+}
+
+function inferStorageType_(entry, stats) {
+  const text = [entry.storageLabel, entry.loc, entry.locationCode, entry.storageId].filter(Boolean).join(' ').toLowerCase();
+  const categories = stats && stats.categories ? Object.keys(stats.categories).join(' ') : '';
+  if ((stats && stats.chemicalCount) || text.indexOf('chem') !== -1 || categories.indexOf('chemical') !== -1) return 'Chemical Storage';
+  if (text.indexOf('machine') !== -1 || categories.indexOf('machine') !== -1) return 'Machine Zone';
+  if (text.indexOf('elect') !== -1 || text.indexOf('arduino') !== -1 || categories.indexOf('electronics') !== -1) return 'Electronics Storage';
+  if (text.indexOf('tool') !== -1 || categories.indexOf('tool') !== -1) return 'Tool Storage';
+  if (text.indexOf('rack') !== -1 || text.indexOf('material') !== -1 || categories.indexOf('material') !== -1) return 'Material Storage';
+  if (text.indexOf('tray') !== -1) return 'Tray Storage';
+  if (text.indexOf('trolley') !== -1) return 'Trolley';
+  if (text.indexOf('cupboard') !== -1 || text.indexOf('cabinet') !== -1) return 'Cupboard / Cabinet';
+  return 'Storage';
+}
+
 function buildQrLabelSheet() {
   const baseUrl = getWebAppBaseUrl_();
   const locations = getAllLocations_();
+  const statsByKey = getLocationStatsByKey_();
   const ss = getSpreadsheet_();
   const sheet = getOrCreateSheet_(ss, CONFIG.QR_LABEL_SHEET_NAME);
-  const headers = ['Room', 'Storage ID', 'Location Code', 'Display Location', 'Specific Location', 'QR Label', 'Web App Link', 'QR Image'];
+  const headers = ['Room', 'Specific Location', 'Storage ID', 'Storage Label', 'Location Code', 'View URL', 'Update URL', 'QR Image Formula', 'Print Label Text'];
   const output = locations.map(function (entry) {
-    const label = entry.room + ' · ' + (entry.displayLoc || entry.loc);
+    const stats = statsByKey[entry.canonicalKey] || {};
+    const displayName = entry.displayLoc || entry.loc;
+    const viewUrl = buildLocationUrl_(baseUrl, entry.room, entry.routeLoc);
+    const techUrl = viewUrl + '&mode=tech';
+    const labelLines = [
+      'D&T Inventory',
+      'Room: ' + entry.room,
+      'Storage ID: ' + (entry.storageId || entry.routeLoc),
+      entry.storageLabel || displayName,
+      'Scan to view inventory'
+    ];
+    if (stats.chemicalCount) labelLines.push('HAZARD STORAGE - CHECK SAFETY FIRST');
     return [
       entry.room,
-      entry.storageId,
-      entry.locationCode,
-      entry.displayLoc || entry.loc,
       entry.loc,
-      label,
-      buildLocationUrl_(baseUrl, entry.room, entry.routeLoc),
-      ''
+      entry.storageId,
+      entry.storageLabel,
+      entry.locationCode,
+      viewUrl,
+      techUrl,
+      '',
+      labelLines.join('\n')
     ];
   });
 
@@ -836,19 +1616,22 @@ function buildQrLabelSheet() {
     sheet.getRange(2, 1, output.length, headers.length).setValues(output);
     for (let i = 0; i < output.length; i++) {
       const row = i + 2;
-      sheet.getRange(row, 8).setFormula('=IF(G' + row + '="","",IMAGE("' + CONFIG.QUICKCHART_QR_BASE + '"&ENCODEURL(G' + row + ')))');
+      sheet.getRange(row, 8).setFormula('=IF(F' + row + '="","",IMAGE("' + CONFIG.QUICKCHART_QR_BASE + '"&ENCODEURL(F' + row + ')))');
     }
+    sheet.getRange(2, 9, output.length, 1).setWrap(true);
   }
 
   sheet.setFrozenRows(1);
   sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0f2fe');
   sheet.setColumnWidths(1, 1, 80);
-  sheet.setColumnWidths(2, 2, 140);
+  sheet.setColumnWidth(2, 220);
+  sheet.setColumnWidth(3, 140);
   sheet.setColumnWidth(4, 220);
-  sheet.setColumnWidth(5, 220);
-  sheet.setColumnWidth(6, 240);
+  sheet.setColumnWidth(5, 140);
+  sheet.setColumnWidth(6, 520);
   sheet.setColumnWidth(7, 520);
   sheet.setColumnWidth(8, 120);
+  sheet.setColumnWidth(9, 260);
 
   return { success: true, sheetName: sheet.getName(), labelCount: output.length };
 }
@@ -865,6 +1648,12 @@ function createReadinessReport() {
     ['Location Count', report.locationCount],
     ['Item Rows', report.itemRows],
     ['Empty Storage Rows', report.emptyStorageRows],
+    ['419A Storage ID Row Count', report.storageId419ACount],
+    ['QR Link Issues', report.qrLinkIssueCount],
+    ['QR Image Missing', report.qrImageMissingCount],
+    ['Rows by Room', JSON.stringify(report.summaryByRoom || {})],
+    ['Rows by Status', JSON.stringify(report.summaryByStatus || {})],
+    ['Rows by Category', JSON.stringify(report.summaryByCategory || {})],
     ['Issue Count', report.issues.length],
     ['Error Count', report.errorCount],
     ['Warning Count', report.warningCount]
@@ -1096,9 +1885,17 @@ function import419AStorageMasterFromSource_(sourceSpreadsheetId) {
     const rowOut = new Array(targetHeader.length).fill('');
     rowOut[targetMap.room] = meta.room;
     rowOut[targetMap.location] = meta.displayLocation;
-    rowOut[targetMap.qty] = '';
-    rowOut[targetMap.category] = '';
-    rowOut[targetMap.status] = '';
+    rowOut[targetMap.qty] = 0;
+    rowOut[targetMap.category] = 'Storage';
+    rowOut[targetMap.status] = 'Good';
+    setOptionalOutputValue_(rowOut, targetMap.remarks, 'Placeholder row for QR/location page');
+    setOptionalOutputValue_(rowOut, targetMap.isPlaceholder, true);
+    setOptionalOutputValue_(rowOut, targetMap.storageType, inferStorageType_({
+      storageId: meta.storageId,
+      storageLabel: meta.storageLabel,
+      loc: meta.displayLocation,
+      locationCode: meta.locationCode
+    }, {}));
     setOptionalOutputValue_(rowOut, targetMap.locationCode, meta.locationCode);
     setOptionalOutputValue_(rowOut, targetMap.storageId, meta.storageId);
     setOptionalOutputValue_(rowOut, targetMap.storageLabel, meta.storageLabel);
@@ -1224,10 +2021,17 @@ function validateInventoryData_() {
   const issues = [];
   const locationCounts = {};
   const itemCounts = {};
+  const placeholderCounts = {};
+  const roomCounts = {};
+  const statusCounts = {};
+  const categoryCounts = {};
   let itemRows = 0;
   let emptyStorageRows = 0;
   let errorCount = 0;
   let warningCount = 0;
+  let qrLinkIssueCount = 0;
+  let qrImageMissingCount = 0;
+  let storageId419ACount = 0;
 
   function addIssue(severity, rowIndex, row, issue, detail) {
     if (severity === 'ERROR') errorCount += 1;
@@ -1249,6 +2053,11 @@ function validateInventoryData_() {
       addIssue('ERROR', '', null, 'MISSING_COLUMN', CONFIG.COLUMN_LABELS[key] + ' is missing.');
     }
   });
+  CONFIG.OPTIONAL_COLUMNS.forEach(function (key) {
+    if (map[key] === -1) {
+      addIssue('WARN', '', null, 'MISSING_OPTIONAL_COLUMN', CONFIG.COLUMN_LABELS[key] + ' is missing. Run Prepare App Columns before full workshop rollout.');
+    }
+  });
 
   const webAppBaseUrl = getWebAppBaseUrl_({ silent: true });
   for (let i = 1; i < values.length; i++) {
@@ -1261,9 +2070,16 @@ function validateInventoryData_() {
     const storageId = getOptionalValue_(row, map.storageId);
     const storageLabel = getOptionalValue_(row, map.storageLabel);
     const locationCode = getOptionalValue_(row, map.locationCode);
+    const remarks = getOptionalValue_(row, map.remarks);
+    const safetyNote = getOptionalValue_(row, map.safetyNote);
+    const reorderLevelText = getOptionalValue_(row, map.reorderLevel);
+    const maintenanceDue = getOptionalValue_(row, map.maintenanceDue);
     const isItem = isInventoryItemRow_(row, map);
+    const status = normalizeStatus_(row[map.status]);
+    const category = cleanString_(row[map.category]) || '(blank)';
 
     if (!room && !loc && !itemId && !itemName) continue;
+    if (room) roomCounts[room] = (roomCounts[room] || 0) + 1;
     if (!room) addIssue('ERROR', sheetRow, row, 'MISSING_ROOM', 'Room is required for browsing and QR links.');
     if (!loc) addIssue('ERROR', sheetRow, row, 'MISSING_LOCATION', 'Specific Location is required for browsing and QR links.');
 
@@ -1273,16 +2089,37 @@ function validateInventoryData_() {
       if (room.toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase() && !storageId) {
         addIssue('WARN', sheetRow, row, '419A_MISSING_STORAGE_ID', '419A rollout rows should use Storage ID where possible.');
       }
+      if (room.toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase() && storageId) storageId419ACount += 1;
       if (map.qrLink !== -1 && webAppBaseUrl) {
         const expected = buildLocationUrl_(webAppBaseUrl, room, identity.routeLoc);
         const current = getOptionalValue_(row, map.qrLink);
-        if (!current) addIssue('WARN', sheetRow, row, 'QR_LINK_MISSING', 'QR link is blank.');
-        else if (current !== expected) addIssue('WARN', sheetRow, row, 'QR_LINK_OUTDATED', 'Expected ' + expected);
+        if (!current) {
+          qrLinkIssueCount += 1;
+          addIssue('WARN', sheetRow, row, 'QR_LINK_MISSING', 'QR link is blank.');
+        } else if (!isValidQrLink_(current, room)) {
+          qrLinkIssueCount += 1;
+          addIssue('WARN', sheetRow, row, 'QR_LINK_INVALID', 'QR link is not a valid deployed /exec storage URL.');
+        } else if (current !== expected) {
+          qrLinkIssueCount += 1;
+          addIssue('WARN', sheetRow, row, 'QR_LINK_OUTDATED', 'Expected ' + expected);
+        }
+        if (room === 'V++' && current && current.indexOf('room=V%2B%2B') === -1 && current.indexOf('room=V++') !== -1) {
+          addIssue('WARN', sheetRow, row, 'VPP_ENCODING_RISK', 'V++ should be URL-encoded as V%2B%2B in QR links.');
+        }
+      }
+      if (map.qrImage !== -1 && map.qrLink !== -1 && getOptionalValue_(row, map.qrLink)) {
+        const qrImageValue = cleanString_(row[map.qrImage]);
+        if (!qrImageValue) {
+          qrImageMissingCount += 1;
+          addIssue('WARN', sheetRow, row, 'QR_IMAGE_MISSING', 'QR Code Image formula/value is blank.');
+        }
       }
     }
 
     if (isItem) {
       itemRows += 1;
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
+      categoryCounts[category] = (categoryCounts[category] || 0) + 1;
       const qtyText = cleanString_(row[map.qty]);
       const qty = Number(row[map.qty]);
       if (qtyText === '' || !Number.isFinite(qty) || qty < 0) {
@@ -1292,6 +2129,27 @@ function validateInventoryData_() {
         addIssue('ERROR', sheetRow, row, 'INVALID_STATUS', 'Allowed values: ' + CONFIG.STATUS_OPTIONS.join(', '));
       }
       if (!itemName) addIssue('WARN', sheetRow, row, 'MISSING_ITEM_NAME', 'Item rows should include Item Name.');
+      if (isHazardCategory_(category) && !remarks && !safetyNote) {
+        addIssue('WARN', sheetRow, row, 'CHEMICAL_SAFETY_NOTE_MISSING', 'Chemical rows should include a remark or Safety Note.');
+      }
+      if (isHazardCategory_(category) && map.sdsLink !== -1 && !getOptionalValue_(row, map.sdsLink)) {
+        addIssue('WARN', sheetRow, row, 'CHEMICAL_SDS_LINK_MISSING', 'Chemical rows should include an SDS Link where available.');
+      }
+      if (status === 'Low Stock' && map.reorderLevel !== -1 && !reorderLevelText) {
+        addIssue('WARN', sheetRow, row, 'LOW_STOCK_REORDER_LEVEL_MISSING', 'Low Stock rows should include a Reorder Level for purchasing review.');
+      }
+      if (reorderLevelText) {
+        const reorderLevel = Number(reorderLevelText);
+        const qty = Number(row[map.qty]);
+        if (!Number.isFinite(reorderLevel) || reorderLevel < 0) {
+          addIssue('WARN', sheetRow, row, 'INVALID_REORDER_LEVEL', 'Reorder Level should be a non-negative number.');
+        } else if (Number.isFinite(qty) && qty <= reorderLevel && status === 'Good') {
+          addIssue('WARN', sheetRow, row, 'REORDER_THRESHOLD_REACHED', 'Quantity is at or below reorder level; consider Low Stock status.');
+        }
+      }
+      if (status === 'Needs Maintenance' && !maintenanceDue && !remarks) {
+        addIssue('WARN', sheetRow, row, 'MAINTENANCE_DETAIL_MISSING', 'Maintenance rows should include a remark or Maintenance Due date.');
+      }
       const itemKey = buildInventoryImportKey_(itemId, itemName, room, loc, storageId, storageLabel, locationCode);
       itemCounts[itemKey] = (itemCounts[itemKey] || 0) + 1;
       if (itemCounts[itemKey] > 1) {
@@ -1299,6 +2157,11 @@ function validateInventoryData_() {
       }
     } else if (room && loc) {
       emptyStorageRows += 1;
+      const placeholderKey = buildLocationIdentity_(room, loc, storageId, storageLabel, locationCode).key;
+      placeholderCounts[placeholderKey] = (placeholderCounts[placeholderKey] || 0) + 1;
+      if (placeholderCounts[placeholderKey] > 1) {
+        addIssue('WARN', sheetRow, row, 'DUPLICATE_STORAGE_PLACEHOLDER', 'More than one placeholder row exists for this storage identity.');
+      }
     }
   }
 
@@ -1323,6 +2186,12 @@ function validateInventoryData_() {
     locationCount: Object.keys(locationCounts).length,
     itemRows: itemRows,
     emptyStorageRows: emptyStorageRows,
+    summaryByRoom: roomCounts,
+    summaryByStatus: statusCounts,
+    summaryByCategory: categoryCounts,
+    qrLinkIssueCount: qrLinkIssueCount,
+    qrImageMissingCount: qrImageMissingCount,
+    storageId419ACount: storageId419ACount,
     issues: issues,
     errorCount: errorCount,
     warningCount: warningCount
@@ -1439,29 +2308,47 @@ function setWebAppBaseUrl(url) {
 }
 
 function getSpreadsheet_() {
-  const spreadsheetId = PropertiesService.getScriptProperties().getProperty(CONFIG.SPREADSHEET_ID_PROPERTY);
-  if (!spreadsheetId || !spreadsheetId.trim()) {
+  const info = getSpreadsheetIdInfo_();
+  if (!info.id) {
     throw new Error('SPREADSHEET_ID is not set.');
   }
-  return SpreadsheetApp.openById(spreadsheetId.trim());
+  try {
+    return SpreadsheetApp.openById(info.id);
+  } catch (err) {
+    throw new Error('Could not open inventory spreadsheet from ' + info.source + ' (' + info.maskedId + '). Check sharing and Apps Script execution permissions. ' + (err.message || String(err)));
+  }
 }
 
 function getInventorySheet_() {
   const ss = getSpreadsheet_();
-  const configuredName = PropertiesService.getScriptProperties().getProperty(CONFIG.INVENTORY_SHEET_NAME_PROPERTY);
-  const preferredNames = [];
+  const configuredName = cleanString_(PropertiesService.getScriptProperties().getProperty(CONFIG.INVENTORY_SHEET_NAME_PROPERTY));
+  const sheets = ss.getSheets();
+  if (!sheets.length) throw new Error('No sheets found in the configured spreadsheet.');
 
-  if (configuredName && configuredName.trim()) preferredNames.push(configuredName.trim());
-  preferredNames.push(CONFIG.DEFAULT_SHEET_NAME);
-
-  for (var i = 0; i < preferredNames.length; i++) {
-    const sheet = ss.getSheetByName(preferredNames[i]);
-    if (sheet) return sheet;
+  if (configuredName) {
+    const configuredSheet = ss.getSheetByName(configuredName);
+    if (!configuredSheet) {
+      throw new Error('Configured INVENTORY_SHEET_NAME "' + configuredName + '" was not found. Available sheets: ' + sheets.map(function (sheet) { return sheet.getName(); }).join(', ') + '.');
+    }
+    const configuredInfo = getHeaderInfoForSheet_(configuredSheet);
+    if (!configuredInfo.hasRequiredHeaders) {
+      throw new Error('Configured inventory sheet "' + configuredName + '" is missing required headers: ' + formatMissingHeaderLabels_(configuredInfo.missingRequired) + '. Header preview: ' + configuredInfo.headerPreview.join(', ') + '.');
+    }
+    return configuredSheet;
   }
 
-  const first = ss.getSheets()[0];
-  if (!first) throw new Error('No sheets found in the configured spreadsheet.');
-  return first;
+  const inventorySheet = ss.getSheetByName(CONFIG.DEFAULT_SHEET_NAME);
+  if (inventorySheet) {
+    const inventoryInfo = getHeaderInfoForSheet_(inventorySheet);
+    if (inventoryInfo.hasRequiredHeaders) return inventorySheet;
+  }
+
+  for (let i = 0; i < sheets.length; i++) {
+    const info = getHeaderInfoForSheet_(sheets[i]);
+    if (info.hasRequiredHeaders) return sheets[i];
+  }
+
+  throw new Error(buildNoInventorySheetMessage_(ss));
 }
 
 function getInventoryDataset_() {
@@ -1509,6 +2396,118 @@ function getLooseColumnMap_(headerRow) {
   return map;
 }
 
+function getSpreadsheetIdInfo_() {
+  const propValue = cleanString_(PropertiesService.getScriptProperties().getProperty(CONFIG.SPREADSHEET_ID_PROPERTY));
+  const fallbackValue = cleanString_(CONFIG.DEFAULT_SPREADSHEET_ID);
+  const id = propValue || fallbackValue;
+  return {
+    id: id,
+    maskedId: maskSpreadsheetId_(id),
+    source: propValue ? 'Script Property SPREADSHEET_ID' : (fallbackValue ? 'fallback spreadsheet ID' : 'missing configuration'),
+    fromFallback: !propValue && !!fallbackValue,
+    propertySet: !!propValue
+  };
+}
+
+function maskSpreadsheetId_(id) {
+  const value = cleanString_(id);
+  if (!value) return '';
+  if (value.length <= 12) return value.slice(0, 3) + '...' + value.slice(-3);
+  return value.slice(0, 6) + '...' + value.slice(-6);
+}
+
+function getHeaderInfoForSheet_(sheet) {
+  const lastColumn = Math.max(sheet.getLastColumn(), 1);
+  const lastRow = sheet.getLastRow();
+  const header = lastRow >= CONFIG.HEADER_ROW
+    ? sheet.getRange(CONFIG.HEADER_ROW, 1, 1, lastColumn).getValues()[0]
+    : [];
+  const normalizedHeaders = header.map(normalizeHeader_);
+  const map = getLooseColumnMap_(header);
+  const requiredColumns = {};
+  const optionalColumns = {};
+  const missingRequired = [];
+  const foundRequired = [];
+  const foundOptional = [];
+
+  CONFIG.REQUIRED_COLUMNS.forEach(function (key) {
+    if (map[key] !== -1) {
+      requiredColumns[key] = 'found (col ' + (map[key] + 1) + ')';
+      foundRequired.push(key);
+    } else {
+      requiredColumns[key] = 'MISSING';
+      missingRequired.push(key);
+    }
+  });
+
+  CONFIG.OPTIONAL_COLUMNS.forEach(function (key) {
+    if (map[key] !== -1) {
+      optionalColumns[key] = 'found (col ' + (map[key] + 1) + ')';
+      foundOptional.push(key);
+    } else {
+      optionalColumns[key] = 'not present';
+    }
+  });
+
+  return {
+    name: sheet.getName(),
+    rowCount: Math.max(lastRow - CONFIG.HEADER_ROW, 0),
+    columnCount: sheet.getLastColumn(),
+    headerPreview: normalizedHeaders.filter(function (value) { return !!value; }).slice(0, 24),
+    requiredColumns: requiredColumns,
+    optionalColumns: optionalColumns,
+    foundRequired: foundRequired,
+    foundOptional: foundOptional,
+    missingRequired: missingRequired,
+    hasRequiredHeaders: missingRequired.length === 0,
+    score: foundRequired.length
+  };
+}
+
+function sheetHasRequiredHeaders_(sheet) {
+  return getHeaderInfoForSheet_(sheet).hasRequiredHeaders;
+}
+
+function describeAvailableSheets_(spreadsheet) {
+  return spreadsheet.getSheets().map(function (sheet) {
+    const info = getHeaderInfoForSheet_(sheet);
+    return {
+      name: info.name,
+      rowCount: info.rowCount,
+      columnCount: info.columnCount,
+      hasRequiredHeaders: info.hasRequiredHeaders,
+      missingRequired: info.missingRequired.map(function (key) { return CONFIG.COLUMN_LABELS[key]; }),
+      foundRequired: info.foundRequired.map(function (key) { return CONFIG.COLUMN_LABELS[key]; }),
+      foundOptional: info.foundOptional.map(function (key) { return CONFIG.COLUMN_LABELS[key]; }),
+      headerPreview: info.headerPreview,
+      score: info.score
+    };
+  });
+}
+
+function formatMissingHeaderLabels_(keys) {
+  return (keys || []).map(function (key) {
+    return CONFIG.COLUMN_LABELS[key] || key;
+  }).join(', ');
+}
+
+function buildNoInventorySheetMessage_(spreadsheet) {
+  const available = describeAvailableSheets_(spreadsheet);
+  const best = available.slice().sort(function (a, b) {
+    return (b.score || 0) - (a.score || 0);
+  })[0];
+  const parts = [
+    'No valid inventory sheet was found.',
+    'Required headers: ' + CONFIG.REQUIRED_COLUMNS.map(function (key) { return CONFIG.COLUMN_LABELS[key]; }).join(', ') + '.',
+    'Available sheets: ' + (available.length ? available.map(function (sheet) { return sheet.name; }).join(', ') : 'none') + '.'
+  ];
+  if (best) {
+    parts.push('Best candidate "' + best.name + '" is missing: ' + (best.missingRequired.length ? best.missingRequired.join(', ') : 'none') + '. Header preview: ' + (best.headerPreview.join(', ') || '-') + '.');
+  }
+  parts.push('Fix: rename the inventory tab to "Inventory" or set INVENTORY_SHEET_NAME to a sheet that contains all required headers.');
+  return parts.join(' ');
+}
+
 function normalizeHeader_(value) {
   return String(value || '')
     .replace(/[\r\n\t]+/g, ' ')
@@ -1530,6 +2529,7 @@ function getWebAppBaseUrl_(options) {
   const opts = options || {};
   const propertyUrl = PropertiesService.getScriptProperties().getProperty(CONFIG.WEB_APP_URL_PROPERTY);
   if (propertyUrl && propertyUrl.trim()) return normalizeWebAppBaseUrl_(propertyUrl);
+  if (CONFIG.DEFAULT_WEB_APP_BASE_URL) return normalizeWebAppBaseUrl_(CONFIG.DEFAULT_WEB_APP_BASE_URL);
 
   if (opts.silent) return '';
   throw new Error('WEB_APP_BASE_URL is not configured.');
@@ -1569,48 +2569,71 @@ function getDiagnosticsSafe_() {
   }
 }
 
-function getConfigStatus() {
+function getLightDiagnostics_() {
   const props = PropertiesService.getScriptProperties();
-  const spreadsheetId = cleanString_(props.getProperty(CONFIG.SPREADSHEET_ID_PROPERTY));
+  const spreadsheetInfo = getSpreadsheetIdInfo_();
   const webAppBaseUrl = cleanString_(props.getProperty(CONFIG.WEB_APP_URL_PROPERTY));
   const inventorySheetName = cleanString_(props.getProperty(CONFIG.INVENTORY_SHEET_NAME_PROPERTY));
+  const effectiveWebAppBaseUrl = webAppBaseUrl || CONFIG.DEFAULT_WEB_APP_BASE_URL;
+  return {
+    light: true,
+    maskedSpreadsheetId: spreadsheetInfo.maskedId,
+    scriptProperties: {
+      spreadsheetIdConfigured: !!spreadsheetInfo.id,
+      spreadsheetIdPropertySet: spreadsheetInfo.propertySet,
+      spreadsheetIdFromFallback: spreadsheetInfo.fromFallback,
+      webAppBaseUrlConfigured: !!effectiveWebAppBaseUrl,
+      webAppBaseUrlPropertySet: !!webAppBaseUrl,
+      webAppBaseUrlFromFallback: !webAppBaseUrl && !!CONFIG.DEFAULT_WEB_APP_BASE_URL,
+      inventorySheetNameConfigured: !!inventorySheetName,
+      inventorySheetName: inventorySheetName || CONFIG.DEFAULT_SHEET_NAME
+    },
+    nextAction: 'Open ?admin=diagnostics for full sheet and column diagnostics.'
+  };
+}
+
+function getConfigStatus() {
+  const props = PropertiesService.getScriptProperties();
+  const spreadsheetInfo = getSpreadsheetIdInfo_();
+  const webAppBaseUrl = cleanString_(props.getProperty(CONFIG.WEB_APP_URL_PROPERTY));
+  const inventorySheetName = cleanString_(props.getProperty(CONFIG.INVENTORY_SHEET_NAME_PROPERTY));
+  const effectiveWebAppBaseUrl = webAppBaseUrl || CONFIG.DEFAULT_WEB_APP_BASE_URL;
 
   const status = {
+    maskedSpreadsheetId: spreadsheetInfo.maskedId,
+    spreadsheetSource: spreadsheetInfo.source,
     scriptProperties: {
-      spreadsheetIdConfigured: !!spreadsheetId,
-      webAppBaseUrlConfigured: !!webAppBaseUrl,
+      spreadsheetIdConfigured: !!spreadsheetInfo.id,
+      spreadsheetIdPropertySet: spreadsheetInfo.propertySet,
+      spreadsheetIdFromFallback: spreadsheetInfo.fromFallback,
+      webAppBaseUrlConfigured: !!effectiveWebAppBaseUrl,
+      webAppBaseUrlPropertySet: !!webAppBaseUrl,
+      webAppBaseUrlFromFallback: !webAppBaseUrl && !!CONFIG.DEFAULT_WEB_APP_BASE_URL,
       inventorySheetNameConfigured: !!inventorySheetName,
       inventorySheetName: inventorySheetName || CONFIG.DEFAULT_SHEET_NAME
     }
   };
 
   try {
+    const ss = getSpreadsheet_();
+    status.availableSheets = describeAvailableSheets_(ss);
+    status.availableSheetNames = status.availableSheets.map(function (sheet) { return sheet.name; });
     const sheet = getInventorySheet_();
-    const header = sheet.getRange(CONFIG.HEADER_ROW, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const normalizedHeaders = header.map(normalizeHeader_);
-    const map = {};
-
-    Object.keys(CONFIG.ALIASES).forEach(function (key) {
-      map[key] = findHeaderIndex_(normalizedHeaders, CONFIG.ALIASES[key]);
-    });
+    const info = getHeaderInfoForSheet_(sheet);
 
     status.sheetInUse = sheet.getName();
-    status.dataRows = Math.max(sheet.getLastRow() - CONFIG.HEADER_ROW, 0);
-    status.requiredColumns = {};
-    status.optionalColumns = {};
-
-    CONFIG.REQUIRED_COLUMNS.forEach(function (key) {
-      status.requiredColumns[key] = map[key] !== -1 ? 'found (col ' + (map[key] + 1) + ')' : 'MISSING';
-    });
-
-    CONFIG.OPTIONAL_COLUMNS.forEach(function (key) {
-      status.optionalColumns[key] = map[key] !== -1 ? 'found (col ' + (map[key] + 1) + ')' : 'not present';
-    });
-
-    status.headerPreview = normalizedHeaders;
+    status.dataRows = info.rowCount;
+    status.requiredColumns = info.requiredColumns;
+    status.optionalColumns = info.optionalColumns;
+    status.missingRequiredColumns = info.missingRequired.map(function (key) { return CONFIG.COLUMN_LABELS[key]; });
+    status.headerPreview = info.headerPreview;
     status.rollout419A = get419AReadinessSummary(CONFIG.ROLLOUT_ROOM);
+    status.nextAction = status.missingRequiredColumns.length
+      ? 'Run D&T Inventory -> Prepare App Columns or fix the header row in "' + sheet.getName() + '".'
+      : 'Configuration is readable. Run Create Readiness Report before QR printing.';
   } catch (err) {
     status.sheetError = err.message || String(err);
+    status.nextAction = 'Open the Google Sheet, verify sharing/access, then run D&T Inventory -> Config Status / Diagnostics.';
   }
 
   Logger.log(JSON.stringify(status, null, 2));
@@ -1710,9 +2733,12 @@ function columnLetter_(indexOneBased) {
   return result;
 }
 
+// Legacy server-rendered UI helpers. The active @7+ runtime renders
+// index.html with app_styles.html and app_script.html; keep these for
+// compatibility with older save responses and earlier deployed versions.
 function renderInitialItemsHtml_(bootstrap) {
   if (bootstrap.pageType === 'landing') {
-    return renderLandingHtml_(bootstrap.locations || [], bootstrap.webAppBaseUrl);
+    return renderLandingHtml_(bootstrap.locations || []);
   }
   if (bootstrap.pageType === 'error') {
     return renderErrorStateHtml_(bootstrap.error);
@@ -1772,8 +2798,8 @@ function renderLandingHtml_(locations, webAppBaseUrl) {
       html += '<div class="room-group-header border-y border-stone-200 bg-stone-100 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-600" data-room-group="' + escapeHtml_(entry.room) + '">Room ' + escapeHtml_(entry.room) + '</div>';
     }
 
-    const viewUrl = buildLocationHref_(webAppBaseUrl, entry.room, entry.routeLoc, 'view');
-    const techUrl = buildLocationHref_(webAppBaseUrl, entry.room, entry.routeLoc, 'tech');
+    const viewUrl = buildLocationHref_('', entry.room, entry.routeLoc, 'view');
+    const techUrl = buildLocationHref_('', entry.room, entry.routeLoc, 'tech');
     const displayName = entry.displayLoc || entry.loc;
 
     html += '<article class="location-card border-b border-stone-200 px-4 py-4 last:border-b-0 ' + (entry.room === CONFIG.ROLLOUT_ROOM ? 'bg-teal-50/40' : 'bg-white') + '" data-search="' + escapeHtml_(entry.searchText) + '" data-room="' + escapeHtml_(entry.room) + '">';
@@ -1797,7 +2823,7 @@ function renderLandingHtml_(locations, webAppBaseUrl) {
     html += '</div>';
     html += '<div class="flex shrink-0 gap-2 sm:flex-row">';
     html += '<a class="rounded-xl bg-stone-200 px-3 py-2 text-xs font-medium text-stone-800 transition hover:bg-stone-300" href="' + escapeHtml_(viewUrl) + '">View items</a>';
-    html += '<a class="rounded-xl bg-sky-700 px-3 py-2 text-xs font-medium text-white transition hover:bg-sky-800" href="' + escapeHtml_(techUrl) + '">Tech update</a>';
+    html += '<a class="rounded-xl bg-sky-700 px-3 py-2 text-xs font-medium text-white transition hover:bg-sky-800" href="' + escapeHtml_(techUrl) + '">Update</a>';
     html += '</div></div></article>';
   });
   html += '<p id="locationNoResults" class="hidden p-5 text-sm text-stone-500">No matching storage locations found.</p>';
@@ -1921,7 +2947,7 @@ function buildPageHtml_(params, bootstrap) {
   const hasEditableRows = isLocationPage && bootstrap.rows && bootstrap.rows.length > 0;
   const modeBadgeLabel = bootstrap.pageType === 'landing'
     ? 'Landing'
-    : (bootstrap.pageType === 'error' ? 'Configuration' : (mode === 'tech' ? 'Technician Mode' : 'View Mode'));
+    : (bootstrap.pageType === 'error' ? 'Configuration' : (mode === 'tech' ? 'Update Mode' : 'View Mode'));
 
   const firstRow = (bootstrap.rows && bootstrap.rows.length > 0) ? bootstrap.rows[0] : null;
   const storageIdDisplay = bootstrap.storageId || (firstRow && firstRow.storageId ? firstRow.storageId : '');
@@ -1971,7 +2997,7 @@ function buildPageHtml_(params, bootstrap) {
     '<div class="flex flex-wrap gap-2">' +
     '<a id="allLocationsLink" class="rounded-xl bg-white/15 px-3.5 py-2 text-xs font-medium text-white transition hover:bg-white/25" href="#">All Locations</a>' +
     '<a id="viewModeLink" class="rounded-xl bg-white/15 px-3.5 py-2 text-xs font-medium text-white transition hover:bg-white/25" href="#">View Mode</a>' +
-    '<a id="techModeLink" class="rounded-xl bg-sky-400 px-3.5 py-2 text-xs font-medium text-slate-950 transition hover:bg-sky-300" href="#">Technician Mode</a>' +
+    '<a id="techModeLink" class="rounded-xl bg-sky-400 px-3.5 py-2 text-xs font-medium text-slate-950 transition hover:bg-sky-300" href="#">Update</a>' +
     '</div></div></header>' +
     '<section class="px-4 pt-4 sm:px-6">' +
     '<section id="notice" class="hidden rounded-2xl px-4 py-3 text-sm"></section>' +
@@ -2005,7 +3031,7 @@ function buildPageHtml_(params, bootstrap) {
     'document.addEventListener("DOMContentLoaded",init);' +
     'function init(){buildModeLinks();renderModeBadge();setBridgeWarning();bindLandingSearch();bindItemFilters();if(' + (CONFIG.DEBUG_PANEL ? 'true' : 'false') + '){renderDebug();}var saveBtn=document.getElementById("saveBtn");if(saveBtn){saveBtn.addEventListener("click",saveUpdates);}}' +
     'function buildModeLinks(){var all=document.getElementById("allLocationsLink");var view=document.getElementById("viewModeLink");var tech=document.getElementById("techModeLink");if(all){all.href=window.location.pathname;}if(!APP.room||!APP.loc){view.classList.add("opacity-50","pointer-events-none");tech.classList.add("opacity-50","pointer-events-none");view.title="Choose a location below first";tech.title="Choose a location below first";view.href="#";tech.href="#";return;}var base=window.location.pathname+"?room="+encodeURIComponent(APP.room)+"&loc="+encodeURIComponent(APP.loc);view.href=base;tech.href=base+"&mode=tech";}' +
-    'function renderModeBadge(){var badge=document.getElementById("modeBadge");var saveBtn=document.getElementById("saveBtn");var hasRows=!!(APP.bootstrap&&APP.bootstrap.rows&&APP.bootstrap.rows.length);if(APP.bootstrap.pageType==="landing"){badge.className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-800";badge.textContent="Landing";if(saveBtn)saveBtn.classList.add("hidden");return;}if(APP.bootstrap.pageType==="error"){badge.className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800";badge.textContent="Configuration";if(saveBtn)saveBtn.classList.add("hidden");return;}if(APP.mode==="tech"){badge.className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-800";badge.textContent="Technician Mode";if(saveBtn)saveBtn.classList.toggle("hidden",!hasRows);}else{badge.className="rounded-full bg-stone-200 px-2.5 py-1 text-xs font-medium text-stone-700";badge.textContent="View Mode";if(saveBtn)saveBtn.classList.add("hidden");}}' +
+    'function renderModeBadge(){var badge=document.getElementById("modeBadge");var saveBtn=document.getElementById("saveBtn");var hasRows=!!(APP.bootstrap&&APP.bootstrap.rows&&APP.bootstrap.rows.length);if(APP.bootstrap.pageType==="landing"){badge.className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-800";badge.textContent="Landing";if(saveBtn)saveBtn.classList.add("hidden");return;}if(APP.bootstrap.pageType==="error"){badge.className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800";badge.textContent="Configuration";if(saveBtn)saveBtn.classList.add("hidden");return;}if(APP.mode==="tech"){badge.className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-800";badge.textContent="Update Mode";if(saveBtn)saveBtn.classList.toggle("hidden",!hasRows);}else{badge.className="rounded-full bg-stone-200 px-2.5 py-1 text-xs font-medium text-stone-700";badge.textContent="View Mode";if(saveBtn)saveBtn.classList.add("hidden");}}' +
     'function hasBridge(){return !!(window.google&&google.script&&google.script.run);}' +
     'function setBridgeWarning(){if(APP.mode!=="tech")return;if(hasBridge())return;var warn=document.getElementById("bridgeWarning");warn.textContent="Interactive save is unavailable in this context. Open the deployed /exec web app URL to use full functionality.";warn.classList.remove("hidden");}' +
     'function bindLandingSearch(){var input=document.getElementById("locationSearch");if(!input)return;input.addEventListener("input",filterLocations);}' +
