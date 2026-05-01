@@ -2,7 +2,7 @@
 
 Version: V2.5 Progress PRD and Workshop Workflow Plan
 Date: 2026-05-01
-Status: Template-based Apps Script runtime deployed through `@11`; live authenticated QA and Sheet-bound admin script alignment still required before physical QR rollout.
+Status: Template-based Apps Script runtime deployed through `@12`; live 419A Location Code routing, QR generation, Storage_Master, QR_Labels, and readiness outputs have been regenerated from the dashboard Sheet. Full physical QR rollout remains gated by warning review, manual reassignment of unmatched old rows, and sample scans.
 
 ## 1. Executive Summary
 
@@ -33,13 +33,13 @@ Repository support files are allowed and now exist:
 
 Current documented production deployment:
 
-- Deployment version: `@11`
+- Deployment version: `@12`
 - Deployment ID: `AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ`
 - Web app URL: `https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec`
 
 ### Local Repo State
 
-The local repo contains the template-based runtime, UI demo operations screens, documentation, matched-workbook updates, and single-deployment QR routing polish. The standalone web runtime was pushed and deployed as Apps Script version `@11`.
+The local repo contains the template-based runtime, UI demo operations screens, documentation, matched-workbook updates, and 419A Location Code routing polish. The standalone web runtime was pushed and deployed as Apps Script version `@12`.
 
 Important note:
 

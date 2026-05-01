@@ -1,6 +1,6 @@
 # D&T QR Inventory Rollout Checklist
 
-This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@11`; version `@10` is retained in Apps Script version history as the rollback fallback.
+This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@12`; version `@11` is retained in Apps Script version history as the rollback fallback.
 
 Production URL:
 
@@ -68,6 +68,8 @@ Do not run QR printing until the readiness report has no critical errors.
 The live `Inventory` tab is the source of truth for the app.
 
 Source Excel workbooks are not read by the deployed app at runtime. They must be converted to Google Sheets before import. Generated sheets such as `QR_Labels` and `Inventory_Readiness_Report` are outputs from the live `Inventory` data.
+
+For Room 419A, the latest operational storage numbering comes from the `Location Code` column in `419A_Storage_Master`. QR labels and app routes should use those codes, for example `419A-FCU-01` or `419A-CAB-01`. Workbook `Storage ID` values are preserved as metadata, but the live 419A stocktake workflow should use Location Code as the code printed on storage labels.
 
 `Storage_Master` is generated from `Inventory` and is the operational storage map for rollout checks. `Audit_Log` is append-only and records Update Mode quantity/status changes when the optional audit columns and save flow are active.
 

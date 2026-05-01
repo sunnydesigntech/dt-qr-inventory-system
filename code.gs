@@ -255,8 +255,8 @@ function show419AReadiness() {
     const lines = [
       'Room: ' + summary.room,
       'Storage locations: ' + summary.locationCount,
-      'Locations with Storage ID: ' + summary.locationsWithStorageId,
-      'Locations missing Storage ID: ' + summary.locationsMissingStorageId,
+      'Locations with 419A code: ' + summary.locationsWithStorageId,
+      'Locations missing 419A code: ' + summary.locationsMissingStorageId,
       'Inventory item rows: ' + summary.itemRows,
       'Empty storage placeholder rows: ' + summary.emptyStorageRows,
       'Chemical item rows: ' + summary.chemicalRows,
@@ -264,7 +264,7 @@ function show419AReadiness() {
       'Status counts: ' + JSON.stringify(summary.statusCounts)
     ];
     if (summary.sampleMissingStorageIds.length) {
-      lines.push('Sample missing Storage ID: ' + summary.sampleMissingStorageIds.join(', '));
+      lines.push('Sample missing 419A code: ' + summary.sampleMissingStorageIds.join(', '));
     }
     ui.alert('419A Readiness Summary', lines.join('\n'), ui.ButtonSet.OK);
   } catch (err) {
@@ -705,7 +705,7 @@ function getClientRoomName_(room) {
 }
 
 function buildClientLocation_(entry, row, map, webAppBaseUrl) {
-  const displayId = entry.storageId || entry.routeLoc || entry.loc;
+  const displayId = entry.routeLoc || entry.storageId || entry.loc;
   const relativeViewUrl = buildLocationHref_('', entry.room, entry.routeLoc, 'view');
   const absoluteViewUrl = webAppBaseUrl ? buildLocationUrl_(webAppBaseUrl, entry.room, entry.routeLoc) : '';
   const viewUrl = relativeViewUrl;
@@ -836,7 +836,7 @@ function buildClientReadiness_(locations, itemsByLocation, validation) {
     return location.room.toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase();
   });
   const ready419A = rolloutLocations.filter(function (location) {
-    return !!(location.storageId && location.qrReady);
+    return !!((location.code || location.storageId) && location.qrReady);
   }).length;
   const rolloutItemCount = rolloutLocations.reduce(function (sum, location) {
     return sum + location.items;
@@ -852,7 +852,7 @@ function buildClientReadiness_(locations, itemsByLocation, validation) {
     errors: errorCount,
     warnings: warningCount,
     missingQr: locations.filter(function (location) { return !location.qrReady; }).length,
-    missingStorageId: rolloutLocations.filter(function (location) { return !location.storageId; }).length,
+    missingStorageId: rolloutLocations.filter(function (location) { return !(location.code || location.storageId); }).length,
     invalidQty: countClientIssues_(issues, 'INVALID_QTY'),
     invalidStatus: countClientIssues_(issues, 'INVALID_STATUS'),
     duplicates: countClientIssues_(issues, 'POSSIBLE_DUPLICATE_ITEM'),
@@ -1243,7 +1243,7 @@ function buildInventoryRowView_(sourceRow, map, sheetRow, category, roomVal, loc
     isHazard: isHazardCategory_(category),
     statusClass: statusClassServer_(status),
     displayLocation: storageLabel || locVal,
-    routeLoc: storageId || storageLabel || locationCode || locVal
+    routeLoc: getPreferredRouteLocation_(roomVal, locVal, storageId, storageLabel, locationCode)
   };
 }
 
@@ -1592,7 +1592,7 @@ function buildQrLabelSheet() {
     const labelLines = [
       'D&T Inventory',
       'Room: ' + entry.room,
-      'Storage ID: ' + (entry.storageId || entry.routeLoc),
+      'Storage Code: ' + (entry.routeLoc || entry.locationCode || entry.storageId),
       entry.storageLabel || displayName,
       'Scan to view inventory'
     ];
@@ -1717,7 +1717,7 @@ function get419AReadinessSummary(room) {
     if (!seenLocations[entry.canonicalKey]) {
       seenLocations[entry.canonicalKey] = true;
       locationCount += 1;
-      if (entry.storageId) {
+      if (entry.locationCode || entry.storageId) {
         locationsWithStorageId += 1;
       } else {
         locationsMissingStorageId += 1;
@@ -2086,10 +2086,10 @@ function validateInventoryData_() {
     if (room && loc) {
       const identity = buildLocationIdentity_(room, loc, storageId, storageLabel, locationCode);
       locationCounts[identity.key] = (locationCounts[identity.key] || 0) + 1;
-      if (room.toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase() && !storageId) {
-        addIssue('WARN', sheetRow, row, '419A_MISSING_STORAGE_ID', '419A rollout rows should use Storage ID where possible.');
+      if (room.toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase() && !locationCode && !storageId) {
+        addIssue('WARN', sheetRow, row, '419A_MISSING_STORAGE_CODE', '419A rollout rows should use Location Code where possible.');
       }
-      if (room.toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase() && storageId) storageId419ACount += 1;
+      if (room.toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase() && (locationCode || storageId)) storageId419ACount += 1;
       if (map.qrLink !== -1 && webAppBaseUrl) {
         const expected = buildLocationUrl_(webAppBaseUrl, room, identity.routeLoc);
         const current = getOptionalValue_(row, map.qrLink);
@@ -2640,10 +2640,17 @@ function getConfigStatus() {
   return status;
 }
 
+function getPreferredRouteLocation_(room, loc, storageId, storageLabel, locationCode) {
+  if (cleanString_(room).toLowerCase() === CONFIG.ROLLOUT_ROOM.toLowerCase() && locationCode) {
+    return locationCode;
+  }
+  return storageId || storageLabel || locationCode || loc;
+}
+
 function buildLocationIdentity_(room, loc, storageId, storageLabel, locationCode) {
-  const routeLoc = storageId || storageLabel || locationCode || loc;
-  const identityType = storageId ? 'storageId' : (storageLabel ? 'storageLabel' : (locationCode ? 'locationCode' : 'location'));
-  const identityValue = storageId || storageLabel || locationCode || loc;
+  const routeLoc = getPreferredRouteLocation_(room, loc, storageId, storageLabel, locationCode);
+  const identityType = routeLoc === locationCode ? 'locationCode' : (routeLoc === storageId ? 'storageId' : (routeLoc === storageLabel ? 'storageLabel' : 'location'));
+  const identityValue = routeLoc;
   const key = [room, identityType, identityValue].join('||').toLowerCase();
   return {
     routeLoc: routeLoc,

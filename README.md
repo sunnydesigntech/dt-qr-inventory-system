@@ -46,7 +46,7 @@ AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ
 Current deployed version:
 
 ```text
-@11 - Single URL QR workflow polish
+@12 - 419A location-code database workflow
 ```
 
 Current web app URL:
@@ -292,6 +292,15 @@ Post-deploy smoke tests:
 7. Run `Build QR Label Sheet` and spot-check a generated QR image/link.
 
 ## Release Log
+
+### 2026-05-01 14:50 HKT
+
+- Version: `@12`
+- Deployment ID: `AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ`
+- Deployment URL: `https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec`
+- Summary: 419A authoritative Location Code workflow: Room 419A now routes QR/storage pages by the latest `Location Code` values such as `419A-FCU-01` and `419A-CAB-01`, while preserving workbook Storage IDs as metadata. The live Inventory was appended with 53 storage placeholder rows and 40 matched current item rows, including 21 latest Chemical Cabinet 01 chemical rows. Storage_Master, QR links, QR image formulas, QR_Labels, and readiness outputs were regenerated from the live Sheet.
+- Rollback note: previous deployment/version `@11` retained in Apps Script version history as fallback.
+- Remaining gate: review the remaining readiness warnings, manually reassign unmatched old 419A rows, and sample-scan pilot QR labels before full physical rollout.
 
 ### 2026-05-01 12:44 HKT
 
