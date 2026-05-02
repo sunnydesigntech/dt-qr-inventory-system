@@ -1,7 +1,7 @@
 # D&T QR Inventory System - Workshop Workflow Roadmap
 
 Date: 2026-05-01
-Status: Active roadmap for turning the QR inventory app into the D&T workshop operating system. The standalone web app is deployed at `@17`; Room 419A uses the authoritative `Location Code` list for QR/storage routes, with live clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, readiness outputs, and Figma-approved dashboard UI polish applied to the dashboard.
+Status: Active roadmap for turning the QR inventory app into the D&T workshop operating system. The standalone web app is deployed at `@18`; Room 419A uses the authoritative `Location Code` list for QR/storage routes, with live clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, readiness outputs, Figma-approved dashboard UI polish, and phone-fit layout refinements applied to the dashboard.
 
 ## Target Operating Model
 

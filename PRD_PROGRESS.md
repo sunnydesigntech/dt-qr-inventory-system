@@ -2,7 +2,7 @@
 
 Version: V2.5 Progress PRD and Workshop Workflow Plan
 Date: 2026-05-01
-Status: Template-based Apps Script runtime deployed through `@17`; live 419A Location Code routing, QR generation, clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, and readiness outputs have been regenerated from the dashboard Sheet workflow. Full physical QR rollout remains gated by warning review, manual reassignment of unmatched old rows, and sample scans.
+Status: Template-based Apps Script runtime deployed through `@18`; live 419A Location Code routing, QR generation, clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, mobile UI fit polish, and readiness outputs have been regenerated from the dashboard Sheet workflow. Full physical QR rollout remains gated by warning review, manual reassignment of unmatched old rows, and sample scans.
 
 ## 1. Executive Summary
 
@@ -33,13 +33,13 @@ Repository support files are allowed and now exist:
 
 Current documented production deployment:
 
-- Deployment version: `@17`
+- Deployment version: `@18`
 - Deployment ID: `AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ`
 - Web app URL: `https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec`
 
 ### Local Repo State
 
-The local repo contains the template-based runtime, UI demo operations screens, documentation, matched-workbook updates, 419A Location Code routing polish, Figma-approved dashboard UI refinements, clickable Storage_Master generation, and real-use Add/Remove item workflow hardening. The standalone web runtime was pushed and deployed as Apps Script version `@17`.
+The local repo contains the template-based runtime, UI demo operations screens, documentation, matched-workbook updates, 419A Location Code routing polish, Figma-approved dashboard UI refinements, clickable Storage_Master generation, real-use Add/Remove item workflow hardening, and mobile UI fit polish. The standalone web runtime was pushed and deployed as Apps Script version `@18`.
 
 Important note:
 

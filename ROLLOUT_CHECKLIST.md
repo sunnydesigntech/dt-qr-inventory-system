@@ -1,6 +1,6 @@
 # D&T QR Inventory Rollout Checklist
 
-This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@17`; version `@16` is retained in Apps Script version history as the add/remove workflow fallback.
+This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@18`; version `@17` is retained in Apps Script version history as the real-use add/remove and clickable Storage_Master workflow fallback.
 
 Production URL:
 

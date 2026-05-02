@@ -355,8 +355,8 @@
     var routeId = routeIdentity(loc);
     var routeLabel = routeIdentityLabel(loc);
     var secondary = secondaryIdentity(loc);
-    var html = '<article class="card rounded-2xl overflow-hidden" data-location-key="' + esc(loc.key) + '">';
-    html += '<button data-action="view-location" data-location-key="' + esc(loc.key) + '" class="w-full text-left px-3.5 py-3 flex items-start gap-3 hover:bg-slate-50">';
+    var html = '<article class="card storage-card rounded-2xl overflow-hidden" data-location-key="' + esc(loc.key) + '">';
+    html += '<button data-action="view-location" data-location-key="' + esc(loc.key) + '" class="storage-card-main w-full text-left px-3.5 py-3 flex items-start gap-3 hover:bg-slate-50">';
     html += '<div class="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ' + iconTone + '">' + icon(iconName, 18) + '</div>';
     html += '<div class="flex-1 min-w-0"><div class="flex items-center gap-1.5 flex-wrap"><h3 class="font-display text-[15px] font-semibold text-slate-900 truncate">' + esc(loc.label) + '</h3>' + (loc.hazard ? hazardPill() : '') + '</div>';
     if (loc.specific) html += '<div class="text-[12px] text-slate-500 mt-0.5 truncate">' + esc(loc.specific) + '</div>';
@@ -371,8 +371,8 @@
     else html += '<span class="pill" style="background:#fff7ed;color:#9a3412">QR missing</span>';
     if (loc.chemicalCount) html += '<span class="pill pill-hazard">' + esc(loc.chemicalCount) + ' chemical</span>';
     if (loc.attentionCount || loc.attention) html += '<span class="pill pill-low">' + esc(loc.attentionCount || loc.attention) + ' attention</span>';
-    html += '</div></div><div class="shrink-0 text-right"><div class="font-display text-[20px] font-semibold text-slate-900 leading-none">' + esc(loc.itemCount || loc.items || 0) + '</div><div class="text-[10.5px] text-slate-500 mt-0.5 uppercase tracking-wide">items</div></div>';
-    html += '</button><div class="border-t border-slate-100 px-2 py-1.5 flex gap-1">';
+    html += '</div></div><div class="storage-card-count shrink-0 text-right"><div class="font-display text-[20px] font-semibold text-slate-900 leading-none">' + esc(loc.itemCount || loc.items || 0) + '</div><div class="text-[10.5px] text-slate-500 mt-0.5 uppercase tracking-wide">items</div></div>';
+    html += '</button><div class="storage-card-actions border-t border-slate-100 px-2 py-1.5 flex gap-1">';
     html += '<button data-action="view-location" data-location-key="' + esc(loc.key) + '" class="flex-1 py-2 rounded-lg text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1.5">' + icon('search', 13) + 'View</button>';
     html += '<div class="w-px bg-slate-100"></div><button data-action="tech-location" data-location-key="' + esc(loc.key) + '" class="flex-1 py-2 rounded-lg text-[12.5px] font-semibold text-blue-700 hover:bg-blue-50 flex items-center justify-center gap-1.5">' + icon('edit', 13) + 'Update</button>';
     html += '</div></article>';
@@ -428,7 +428,7 @@
     if (stats.hazard) html += '<span class="pill pill-hazard">' + stats.hazard + ' chemical</span>';
     if (stats.attention) html += '<span class="pill pill-low">' + stats.attention + ' need attention</span>';
     html += '</div></div>';
-    html += '<div class="px-4 pt-2.5 grid grid-cols-1 sm:grid-cols-[1fr_125px_150px] gap-2"><div class="relative">' + icon('search', 15, 'absolute left-3 top-1/2 -translate-y-1/2 text-slate-400') +
+    html += '<div class="location-filters px-4 pt-2.5 grid grid-cols-1 sm:grid-cols-[1fr_125px_150px] gap-2"><div class="relative">' + icon('search', 15, 'absolute left-3 top-1/2 -translate-y-1/2 text-slate-400') +
       '<input id="itemSearch" value="' + esc(q) + '" class="input pl-9 py-2.5 text-[14px]" placeholder="Search items..."/></div>';
     html += '<select id="statusFilter" class="select py-2.5 text-[13px] w-full sm:w-[125px]">' + ['All', 'Good', 'Low Stock', 'Missing', 'Needs Maintenance'].map(function (option) {
       return '<option ' + (option === status ? 'selected' : '') + '>' + esc(option) + '</option>';
@@ -450,7 +450,7 @@
   function renderContextStrip(loc, room) {
     var routeId = routeIdentity(loc);
     var secondary = secondaryIdentity(loc);
-    return '<div class="px-4 pt-3 pb-3 border-b border-slate-200 sticky top-0 z-10 ' + (route.mode === 'tech' ? 'bg-amber-50/90 backdrop-blur' : 'bg-white/95 backdrop-blur') + '">' +
+    return '<div class="context-strip px-4 pt-3 pb-3 border-b border-slate-200 sticky top-0 z-10 ' + (route.mode === 'tech' ? 'bg-amber-50/90 backdrop-blur' : 'bg-white/95 backdrop-blur') + '">' +
       '<div class="flex items-center gap-2"><button data-action="back" class="tap rounded-lg hover:bg-white flex items-center justify-center text-slate-700 -ml-2">' + icon('arrow-left', 20) + '</button>' +
       '<div class="flex-1 min-w-0"><div class="flex items-center gap-1.5"><span class="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-blue-700">' + esc(room.name || ('Room ' + loc.room)) + '</span>' +
       (room.rollout ? '<span class="pill pill-teal" style="padding:2px 7px;font-size:10px">419A</span>' : '') + '</div>' +
@@ -459,7 +459,7 @@
       modeBadge(route.mode) + '</div><div class="mt-2.5 flex flex-wrap items-center gap-1.5">' +
       (routeId ? '<span class="route-badge"><span>' + esc(routeIdentityLabel(loc)) + '</span><strong>' + esc(routeId) + '</strong></span>' : '') +
       (loc.storageType ? '<span class="pill pill-neutral">' + esc(loc.storageType) + '</span>' : '') +
-      '<button data-action="toggle-mode" class="ml-auto pill pill-blue hover:bg-blue-100" style="padding:5px 10px">' + icon(route.mode === 'view' ? 'edit' : 'search', 11) + (route.mode === 'view' ? 'Switch to Update' : 'Switch to View') + '</button>' +
+      '<button data-action="toggle-mode" class="storage-mode-toggle ml-auto pill pill-blue hover:bg-blue-100" style="padding:5px 10px">' + icon(route.mode === 'view' ? 'edit' : 'search', 11) + (route.mode === 'view' ? 'Switch to Update' : 'Switch to View') + '</button>' +
       '</div>' +
       (secondary ? '<div class="mt-2 text-[11px] text-slate-500 truncate">' + esc(secondary) + '</div>' : '') +
       '</div>';
@@ -472,8 +472,8 @@
 
   function renderItemCard(item) {
     var changedClass = item.changed ? 'rounded-2xl row-changed' : '';
-    var html = '<div class="' + changedClass + '"><article class="card-flat rounded-2xl border bg-white p-3.5 border-slate-200">';
-    html += '<div class="flex items-start justify-between gap-3"><div class="min-w-0 flex-1"><div class="flex items-center gap-1.5 flex-wrap">';
+    var html = '<div class="' + changedClass + '"><article class="item-card card-flat rounded-2xl border bg-white p-3.5 border-slate-200">';
+    html += '<div class="item-card-row flex items-start justify-between gap-3"><div class="item-card-main min-w-0 flex-1"><div class="flex items-center gap-1.5 flex-wrap">';
     html += '<h3 class="font-display text-[15px] font-semibold text-slate-900 leading-tight">' + esc(item.name) + '</h3>' + (item.hazard ? hazardPill() : '') + '</div>';
     html += '<div class="mt-1 text-[11.5px] text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5"><span class="font-mono">' + esc(item.id) + '</span>' + (item.category ? '<span>- ' + esc(item.category) + '</span>' : '') + (item.unit ? '<span>- ' + esc(item.unit) + '</span>' : '') + '</div>';
     if (item.remarks) html += '<div class="mt-2 text-[12.5px] text-slate-600"><span class="font-medium text-slate-800">Remarks:</span> ' + esc(item.remarks) + '</div>';
@@ -488,7 +488,7 @@
     if (item.hazard) html += '<div class="mt-2 rounded-lg bg-red-50 border border-red-100 px-2.5 py-1.5 text-[11.5px] text-red-800 flex gap-1.5">' + icon('shield', 13, 'shrink-0 mt-0.5') + '<span>' + esc(item.safetyNote || 'Handle per D&T chemical storage and safety procedures.') + '</span></div>';
     html += '</div>';
     if (route.mode === 'tech') html += renderTechControls(item);
-    else html += '<div class="shrink-0 text-right rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 min-w-[78px]"><div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Expected</div><div class="font-display text-[24px] font-semibold leading-none mt-0.5 text-slate-900">' + esc(item.qty) + '</div>' + (item.unit ? '<div class="text-[10.5px] text-slate-500 mt-0.5">' + esc(item.unit) + '</div>' : '') + '<div class="mt-1.5 flex justify-end">' + statusPill(item.status) + '</div></div>';
+    else html += '<div class="expected-box shrink-0 text-right rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 min-w-[78px]"><div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Expected</div><div class="font-display text-[24px] font-semibold leading-none mt-0.5 text-slate-900">' + esc(item.qty) + '</div>' + (item.unit ? '<div class="text-[10.5px] text-slate-500 mt-0.5">' + esc(item.unit) + '</div>' : '') + '<div class="mt-1.5 flex justify-end">' + statusPill(item.status) + '</div></div>';
     html += '</div></article>';
     if (item.changed) html += '<div class="px-3 pb-2 -mt-1 text-[11px] text-amber-800 flex items-center gap-1.5">' + icon('edit', 11) + ' Changed - ' + esc(item._orig.qty) + ' -> ' + esc(item.qty) + (item.status !== item._orig.status ? ' - ' + esc(item._orig.status) + ' -> ' + esc(item.status) : '') + '</div>';
     html += '</div>';
@@ -496,7 +496,7 @@
   }
 
   function renderTechControls(item) {
-    return '<div class="shrink-0 w-[160px] flex flex-col gap-2"><div><div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Quantity</div>' +
+    return '<div class="item-card-controls shrink-0 w-[160px] flex flex-col gap-2"><div><div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Quantity</div>' +
       '<div class="flex items-center gap-1"><button data-action="dec-qty" data-row="' + esc(item.sheetRow) + '" class="tap rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center justify-center">' + icon('minus', 16) + '</button>' +
       '<input data-action="qty" data-row="' + esc(item.sheetRow) + '" class="qty-input input flex-1 px-1" type="number" min="0" step="any" inputmode="decimal" value="' + esc(item.qty) + '"/>' +
       '<button data-action="inc-qty" data-row="' + esc(item.sheetRow) + '" class="tap rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center justify-center">' + icon('plus', 16) + '</button></div><div class="mt-1 text-[10.5px] text-slate-500">Non-negative decimal allowed</div></div>' +
@@ -513,10 +513,10 @@
       routeIdentity(route.loc) ? routeIdentityLabel(route.loc) + ' ' + routeIdentity(route.loc) : '',
       route.loc && route.loc.label ? route.loc.label : ''
     ].filter(Boolean).join(' - ');
-    return '<div class="mx-4 mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-3.5">' +
+    return '<div class="add-item-panel mx-4 mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-3.5">' +
       '<div class="flex items-start justify-between gap-3"><div><div class="font-semibold text-blue-950 flex items-center gap-1.5">' + icon('plus', 14) + 'Add item to this storage</div><div class="text-[12px] text-blue-900/80 mt-0.5">This appends a new Inventory row using the current room and storage identity.</div></div><button data-action="cancel-add-item" class="tap rounded-lg hover:bg-blue-100 text-blue-800 px-2">Cancel</button></div>' +
       '<div class="mt-2 rounded-xl bg-white/70 border border-blue-100 px-3 py-2 text-[12px] text-blue-950"><span class="font-semibold">Current storage:</span> ' + esc(storageText || 'selected storage') + '</div>' +
-      '<div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">' +
+      '<div class="add-item-grid mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">' +
       '<label class="text-[11px] font-semibold text-slate-600">Item name <span class="text-red-600">*</span><input id="newItemName" class="input mt-1" placeholder="e.g. Coping saw"/></label>' +
       '<label class="text-[11px] font-semibold text-slate-600">Item ID <input id="newItemId" class="input mt-1" placeholder="Optional; auto-generated if blank"/></label>' +
       '<label class="text-[11px] font-semibold text-slate-600">Quantity <span class="text-red-600">*</span><input id="newItemQty" class="input mt-1" type="number" min="0" step="any" inputmode="decimal" value="1"/></label>' +
@@ -524,7 +524,7 @@
       '<label class="text-[11px] font-semibold text-slate-600">Category <span class="text-red-600">*</span><select id="newItemCategory" class="select mt-1"><option>Tools</option><option>Materials</option><option>Consumables</option><option>Electronics</option><option>Chemicals</option><option>Machine</option><option>Test</option><option>Other</option></select></label>' +
       '<label class="text-[11px] font-semibold text-slate-600">Status <select id="newItemStatus" class="select mt-1"><option>Good</option><option>Low Stock</option><option>Missing</option><option>Needs Maintenance</option></select></label>' +
       '<label class="text-[11px] font-semibold text-slate-600 sm:col-span-2">Remarks <input id="newItemRemarks" class="input mt-1" placeholder="Optional notes for this storage item"/></label>' +
-      '</div><div class="mt-3 flex justify-end"><button data-action="submit-add-item" class="btn btn-success">' + icon('save', 14) + ' Add to Inventory</button></div></div>';
+      '</div><div class="add-item-actions mt-3 flex justify-end"><button data-action="submit-add-item" class="btn btn-success">' + icon('save', 14) + ' Add to Inventory</button></div></div>';
   }
 
   function renderSaveNotice() {
@@ -658,7 +658,7 @@
       '<div class="hidden md:grid md:grid-cols-[1.5fr_0.6fr_1fr_0.7fr_0.6fr_0.7fr_0.9fr] gap-2 px-4 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-500 bg-slate-50">' +
       '<div>Storage</div><div>Room</div><div>Type</div><div>QR</div><div>Items</div><div>Tested</div><div>Last checked</div></div>';
     list.forEach(function (loc) {
-      html += '<div class="px-4 py-3 md:grid md:grid-cols-[1.5fr_0.6fr_1fr_0.7fr_0.6fr_0.7fr_0.9fr] md:gap-2 md:items-center">' +
+      html += '<div class="storage-master-row px-4 py-3 md:grid md:grid-cols-[1.5fr_0.6fr_1fr_0.7fr_0.6fr_0.7fr_0.9fr] md:gap-2 md:items-center">' +
         '<div class="md:min-w-0"><div class="flex items-center gap-1.5 flex-wrap"><h3 class="font-display text-[14px] font-semibold text-slate-900 truncate">' + esc(loc.label) + '</h3>' + (loc.hazard ? '<span class="pill pill-hazard">' + icon('hazard', 10) + 'Chem</span>' : '') + '</div>' +
         '<div class="text-[11px] text-slate-500 font-mono truncate mt-0.5">' + esc(loc.id || '-') + (loc.code ? ' - ' + esc(loc.code) : '') + '</div></div>' +
         '<div class="text-[12px] text-slate-600 mt-1.5 md:mt-0">' + esc(loc.room) + '</div>' +
@@ -798,7 +798,7 @@
   }
 
   function topBar(title, right) {
-    return '<div class="px-2 py-2 bg-white border-b border-slate-200 flex items-center gap-1 sticky top-0 z-10"><button data-action="back" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-700">' + icon('arrow-left', 20) + '</button><div class="flex-1 text-[13.5px] font-semibold text-slate-900 truncate">' + esc(title) + '</div>' + (right || '') + '</div>';
+    return '<div class="topbar px-2 py-2 bg-white border-b border-slate-200 flex items-center gap-1 sticky top-0 z-10"><button data-action="back" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-700">' + icon('arrow-left', 20) + '</button><div class="topbar-title flex-1 text-[13.5px] font-semibold text-slate-900 truncate">' + esc(title) + '</div>' + (right || '') + '</div>';
   }
 
   function bindCurrentRoute() {

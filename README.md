@@ -46,7 +46,7 @@ AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ
 Current deployed version:
 
 ```text
-@17 - real-use inventory workflow polish
+@18 - mobile UI fit polish
 ```
 
 Current web app URL:
@@ -293,6 +293,14 @@ Post-deploy smoke tests:
 7. Run `Build QR Label Sheet` and spot-check a generated QR image/link.
 
 ## Release Log
+
+### 2026-05-02 17:32 HKT
+
+- Version: `@18`
+- Deployment ID: `AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ`
+- Deployment URL: `https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec`
+- Summary: mobile UI fit polish for the live template runtime. Phone layouts now stack Update controls, Add Item, save bar, item cards, storage cards, QR labels, and Storage Master rows more predictably at 320-390px widths, with safer tap targets and reduced horizontal overflow risk.
+- Rollback note: version `@17` remains the fallback for the real-use add/remove and clickable Storage_Master workflow.
 
 ### 2026-05-01 20:53 HKT
 
