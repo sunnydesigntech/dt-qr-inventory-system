@@ -9,7 +9,7 @@
 var DTINV_CONFIG = {
   MENU_NAME: 'D&T Inventory',
   WEB_APP_BASE_URL_PROPERTY: 'WEB_APP_BASE_URL',
-  DEFAULT_WEB_APP_BASE_URL: 'https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec',
+  DEFAULT_WEB_APP_BASE_URL: '',
   INVENTORY_SHEET_NAME: 'Inventory',
   STORAGE_MASTER_SHEET_NAME: 'Storage_Master',
   QR_LABEL_SHEET_NAME: 'QR_Labels',
@@ -538,7 +538,19 @@ function DTInv_buildQrLabelSheet_() {
   var sheet = ss.getSheetByName(DTINV_CONFIG.QR_LABEL_SHEET_NAME) || ss.insertSheet(DTINV_CONFIG.QR_LABEL_SHEET_NAME);
   sheet.clear();
   DTInv_resetSheetRules_(sheet);
-  var headers = ['Room', 'Specific Location', 'Storage ID', 'Storage Label', 'Location Code', 'View URL', 'Update URL', 'QR Image Formula', 'Print Label Text'];
+  var headers = [
+    'Room',
+    'Specific Location',
+    'Storage ID',
+    'Storage Label',
+    'Location Code',
+    'View URL',
+    'Update URL',
+    'QR Image Formula',
+    'Print Label Text',
+    'Brother QL-1110 Label Size',
+    'Printer Notes'
+  ];
   var rows = labels.map(function (loc, index) {
     var rowNumber = index + 2;
     var text = [
@@ -548,6 +560,10 @@ function DTInv_buildQrLabelSheet_() {
       loc.storageLabel || '',
       'Scan to view inventory'
     ].filter(Boolean).join('\n');
+    var brotherSize = loc.chemicalCount ? '102mm x 70mm safety' : '102mm x 50mm or 90mm x 29mm';
+    var printerNotes = loc.chemicalCount
+      ? 'Use Brother 102mm safety preset; 90mm x 29mm is not recommended for hazard labels; print sample first.'
+      : 'Use Brother 102mm compact/safety preset, or 90mm x 29mm slim preset for short labels; print sample first; scale 100%.';
     return [
       loc.room,
       loc.specificLocation,
@@ -557,14 +573,16 @@ function DTInv_buildQrLabelSheet_() {
       loc.viewUrl,
       loc.techUrl,
       '=IMAGE("https://quickchart.io/qr?text="&ENCODEURL(F' + rowNumber + ')&"&size=180")',
-      loc.chemicalCount ? text + '\nHAZARD STORAGE - CHECK SAFETY FIRST' : text
+      loc.chemicalCount ? text + '\nHAZARD STORAGE - CHECK SAFETY FIRST' : text,
+      brotherSize,
+      printerNotes
     ];
   });
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   if (rows.length) {
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
     sheet.getRange(2, 8, rows.length, 1).setFormulas(rows.map(function (r) { return [r[7]]; }));
-    sheet.getRange(2, 9, rows.length, 1).setWrap(true);
+    sheet.getRange(2, 9, rows.length, 3).setWrap(true);
   }
   sheet.setFrozenRows(1);
   sheet.autoResizeColumns(1, headers.length);

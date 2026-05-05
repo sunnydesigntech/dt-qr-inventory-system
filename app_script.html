@@ -12,6 +12,20 @@
   var saveError = '';
   var saveMessage = '';
   var addFormOpen = false;
+  var toolsOpen = false;
+  var scannerState = {
+    open: false,
+    status: 'idle',
+    error: '',
+    message: '',
+    manual: '',
+    suggestions: [],
+    stream: null,
+    raf: 0,
+    starting: false,
+    detector: null,
+    cameraRequested: false
+  };
 
   function emptyAppData() {
     return {
@@ -121,14 +135,25 @@
   }
 
   function metric(label, value, sub, tone) {
-    var toneClass = tone === 'rollout' ? 'border-teal-200 bg-[var(--vsa-teal-soft)]' : '';
-    var labelClass = tone === 'rollout' ? 'text-teal-700' : 'text-slate-500';
-    var valueClass = tone === 'rollout' ? 'text-teal-900' : 'text-slate-900';
-    return '<div class="card-flat rounded-2xl px-3.5 py-3 ' + toneClass + '">' +
-      '<div class="text-[10.5px] font-semibold uppercase tracking-[0.16em] ' + labelClass + '">' + esc(label) + '</div>' +
-      '<div class="mt-1 text-[22px] font-semibold leading-none font-display ' + valueClass + '">' + esc(value) + '</div>' +
-      (sub ? '<div class="mt-1 text-[11px] text-slate-500">' + esc(sub) + '</div>' : '') +
-      '</div>';
+    var iconName = {
+      '419A rollout': 'shield',
+      Rooms: 'grid',
+      Storages: 'box',
+      Items: 'list',
+      Chemicals: 'flask',
+      Attention: 'warn'
+    }[label] || 'box';
+    var toneClass = tone === 'rollout' ? 'metric-rollout' : '';
+    var iconClass = tone === 'rollout' ? 'metric-icon is-rollout' :
+      (label === 'Attention' ? 'metric-icon is-warning' :
+      (label === 'Chemicals' ? 'metric-icon is-hazard' : 'metric-icon'));
+    return '<div class="card-flat metric-card rounded-2xl ' + toneClass + '">' +
+      '<div class="' + iconClass + '">' + icon(iconName, 17) + '</div>' +
+      '<div class="min-w-0">' +
+      '<div class="text-[10.5px] font-semibold uppercase tracking-[0.16em] metric-label">' + esc(label) + '</div>' +
+      '<div class="mt-1 text-[22px] font-semibold leading-none font-display metric-value">' + esc(value) + '</div>' +
+      (sub ? '<div class="mt-1 text-[11px] text-slate-500 metric-sub">' + esc(sub) + '</div>' : '') +
+      '</div></div>';
   }
 
   function initialRoute() {
@@ -160,7 +185,7 @@
 
   function updateUrl(params) {
     var url = new URL(window.location.href);
-    ['room', 'loc', 'mode', 'admin'].forEach(function (key) { url.searchParams.delete(key); });
+    ['room', 'loc', 'mode', 'admin', 'printer'].forEach(function (key) { url.searchParams.delete(key); });
     Object.keys(params || {}).forEach(function (key) {
       if (params[key]) url.searchParams.set(key, params[key]);
     });
@@ -168,6 +193,8 @@
   }
 
   function setRoute(next) {
+    stopScanner();
+    scannerState.open = false;
     route = next;
     saveState = 'idle';
     saveError = '';
@@ -186,6 +213,167 @@
     setRoute({ name: 'location', loc: loc, mode: mode === 'tech' ? 'tech' : 'view' });
   }
 
+  function labelPrintPreset() {
+    var raw = '';
+    try {
+      raw = new URL(window.location.href).searchParams.get('printer') || '';
+    } catch (err) {
+      raw = '';
+    }
+    raw = String(raw || '').toLowerCase();
+    if (raw === 'brother-ql1110' || raw === 'brother' || raw === 'ql1110' || raw === 'brother-102x70') return 'brother-102x70';
+    if (raw === 'brother-102x50' || raw === '102x50') return 'brother-102x50';
+    if (raw === 'brother-90x29' || raw === '90x29' || raw === '90mmx29mm') return 'brother-90x29';
+    return 'standard';
+  }
+
+  function labelPrintPresetConfig(preset) {
+    if (preset === 'brother-90x29') {
+      return {
+        id: preset,
+        title: 'Brother QL slim labels',
+        description: '90mm x 29mm slim thermal label preset using a safe inset printable area so the QR and text fit. Best for short normal-storage labels, not chemical hazard labels.',
+        sheetClass: 'is-brother is-brother-slim',
+        printSize: '90mm x 29mm',
+        pageSize: '90mm 29mm',
+        printWidth: '90mm',
+        printHeight: '29mm',
+        printBoxWidth: '76mm',
+        printBoxHeight: '22mm',
+        printBoxMargin: '3.5mm 7mm',
+        density: 'Slim thermal roll'
+      };
+    }
+    if (preset === 'brother-102x50') {
+      return {
+        id: preset,
+        title: 'Brother QL-1110 compact labels',
+        description: '102mm x 50mm continuous thermal label preset. Best for normal cupboards, trays, trolleys, and storage points with short labels.',
+        sheetClass: 'is-brother is-brother-compact',
+        printSize: '102mm x 50mm',
+        pageSize: '102mm 50mm',
+        printWidth: '102mm',
+        printHeight: '50mm',
+        printBoxWidth: '102mm',
+        printBoxHeight: '50mm',
+        printBoxMargin: '0',
+        density: 'Compact thermal roll'
+      };
+    }
+    if (preset === 'brother-102x70') {
+      return {
+        id: preset,
+        title: 'Brother QL-1110 safety labels',
+        description: '102mm x 70mm continuous thermal label preset. Recommended for mixed batches and chemical labels because hazard text has enough space.',
+        sheetClass: 'is-brother is-brother-safety',
+        printSize: '102mm x 70mm',
+        pageSize: '102mm 70mm',
+        printWidth: '102mm',
+        printHeight: '70mm',
+        printBoxWidth: '102mm',
+        printBoxHeight: '70mm',
+        printBoxMargin: '0',
+        density: 'Safety thermal roll'
+      };
+    }
+    return {
+      id: 'standard',
+      title: 'A4 print preview',
+      description: 'A4, two-column preview for ordinary office printing or PDF export.',
+      sheetClass: 'is-standard',
+      printSize: 'A4',
+      pageSize: 'A4',
+      printWidth: '210mm',
+      printHeight: '297mm',
+      density: 'A4 sheets'
+    };
+  }
+
+  function labelPrintTarget() {
+    try {
+      return new URL(window.location.href).searchParams.get('label') || '';
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function labelTargetValues(loc) {
+    if (!loc) return [];
+    return [
+      loc.key,
+      routeIdentity(loc),
+      loc.routeLoc,
+      loc.id,
+      loc.code,
+      loc.storageId,
+      loc.storageLabel,
+      loc.label,
+      loc.specific
+    ].filter(Boolean).map(String);
+  }
+
+  function labelTargetMatches(loc, target) {
+    var needle = String(target || '').toLowerCase();
+    if (!needle) return false;
+    return labelTargetValues(loc).some(function (value) {
+      return value.toLowerCase() === needle;
+    });
+  }
+
+  function setLabelPrintPreset(preset) {
+    var url = new URL(window.location.href);
+    url.searchParams.set('admin', 'labels');
+    ['room', 'loc', 'mode'].forEach(function (key) { url.searchParams.delete(key); });
+    if (!preset || preset === 'standard') url.searchParams.delete('printer');
+    else if (preset === 'brother-102x70') url.searchParams.set('printer', 'brother-ql1110');
+    else url.searchParams.set('printer', preset);
+    window.history.replaceState({}, '', url.toString());
+    setRoute({ name: 'labels' });
+  }
+
+  function setLabelPrintTarget(labelKey, autoPrint) {
+    var url = new URL(window.location.href);
+    url.searchParams.set('admin', 'labels');
+    ['room', 'loc', 'mode'].forEach(function (key) { url.searchParams.delete(key); });
+    if (labelKey) url.searchParams.set('label', labelKey);
+    else url.searchParams.delete('label');
+    window.history.replaceState({}, '', url.toString());
+    setRoute({ name: 'labels' });
+    if (autoPrint) {
+      window.setTimeout(function () { window.print(); }, 120);
+    }
+  }
+
+  function applyDynamicPrintPreset(preset) {
+    var cfg = labelPrintPresetConfig(preset);
+    var style = document.getElementById('dynamicPrintPreset');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'dynamicPrintPreset';
+      document.head.appendChild(style);
+    }
+    var labelWidth = cfg.printWidth || '102mm';
+    var labelHeight = cfg.printHeight || (preset === 'brother-102x50' ? '50mm' : '70mm');
+    var printBoxWidth = cfg.printBoxWidth || labelWidth;
+    var printBoxHeight = cfg.printBoxHeight || labelHeight;
+    var printBoxMargin = cfg.printBoxMargin || '0';
+    if (preset === 'standard') {
+      style.textContent = '@media print { @page { size: A4 portrait; margin: 10mm; } .qr-label:last-child{page-break-after:auto!important;break-after:auto!important;} }';
+      return cfg;
+    }
+    style.textContent =
+      '@media print {' +
+      '@page { size: ' + cfg.pageSize + '; margin: 0; }' +
+      'body,html{width:' + labelWidth + ';min-width:' + labelWidth + ';height:auto!important;min-height:0!important;margin:0!important;padding:0!important;background:#fff!important;}' +
+      '.app-shell{width:' + labelWidth + '!important;max-width:' + labelWidth + '!important;min-height:0!important;margin:0!important;padding:0!important;box-shadow:none!important;overflow:visible!important;}' +
+      '.topbar,.label-print-controls,.label-printer-notes,.label-mode-tabs{display:none!important;}' +
+      '.label-sheet{display:block!important;width:' + labelWidth + '!important;min-width:' + labelWidth + '!important;min-height:0!important;margin:0!important;border:0!important;box-shadow:none!important;padding:0!important;background:#fff!important;}' +
+      '.qr-label{box-sizing:border-box!important;width:' + printBoxWidth + '!important;min-height:' + printBoxHeight + '!important;height:' + printBoxHeight + '!important;margin:' + printBoxMargin + '!important;padding:1.2mm 1.6mm!important;border:0!important;border-radius:0!important;box-shadow:none!important;page-break-before:auto!important;page-break-after:auto!important;break-before:auto!important;break-after:auto!important;}' +
+      '.label-sheet.is-brother-slim .qr-label{padding:.9mm 1.1mm!important;}' +
+      '}';
+    return cfg;
+  }
+
   function toggleMode() {
     if (!route.loc) return;
     var nextMode = route.mode === 'tech' ? 'view' : 'tech';
@@ -195,15 +383,22 @@
 
   function render() {
     if (!root) return;
-    if (route.name === 'error') root.innerHTML = shell(renderError());
-    else if (route.name === 'admin') root.innerHTML = shell(renderAdmin(), true);
-    else if (route.name === 'labels') root.innerHTML = shell(renderLabels(), true);
-    else if (route.name === 'storage') root.innerHTML = shell(renderStorageMaster(), true);
-    else if (route.name === 'audit') root.innerHTML = shell(renderAuditLog(), true);
-    else if (route.name === 'lowstock') root.innerHTML = shell(renderLowStock(), true);
-    else if (route.name === 'maintenance') root.innerHTML = shell(renderMaintenance(), true);
-    else if (route.name === 'location') root.innerHTML = shell(renderLocation());
-    else root.innerHTML = shell(renderLanding(), true);
+    if (route.name !== 'labels') {
+      var printStyle = document.getElementById('dynamicPrintPreset');
+      if (printStyle) printStyle.textContent = '';
+    }
+    var content = '';
+    var wide = false;
+    if (route.name === 'error') content = renderError();
+    else if (route.name === 'admin') { content = renderAdmin(); wide = true; }
+    else if (route.name === 'labels') { content = renderLabels(); wide = true; }
+    else if (route.name === 'storage') { content = renderStorageMaster(); wide = true; }
+    else if (route.name === 'audit') { content = renderAuditLog(); wide = true; }
+    else if (route.name === 'lowstock') { content = renderLowStock(); wide = true; }
+    else if (route.name === 'maintenance') { content = renderMaintenance(); wide = true; }
+    else if (route.name === 'location') content = renderLocation();
+    else { content = renderLanding(); wide = true; }
+    root.innerHTML = shell(content, wide) + (scannerState.open ? renderScannerOverlay() : '');
     bindCurrentRoute();
   }
 
@@ -231,12 +426,14 @@
       totalAttention: rooms.reduce(function (sum, room) { return sum + (Number(room.attentionCount || room.attention) || 0); }, 0)
     };
     var r = (appData.readiness && appData.readiness.rollout419A) || { pct: 0, ready: 0, total: 0 };
+    var warningCount = Number((appData.readiness || {}).warnings || 0);
     var html = '';
-    html += '<div class="bg-white border-b border-slate-200 px-4 pt-4 pb-3">';
+    html += '<div class="mobile-app-header bg-white border-b border-slate-200 px-4 pt-4 pb-3">';
     html += '<div class="flex items-center justify-between"><div>';
     html += '<div class="text-[10.5px] font-semibold uppercase tracking-[0.2em] text-blue-700">Victoria Shanghai Academy</div>';
     html += '<h1 class="font-display text-[19px] font-semibold text-slate-900 mt-0.5">D&amp;T QR Inventory</h1>';
     html += '</div><div class="flex items-center gap-1.5">';
+    html += '<button data-action="open-scanner" class="tap rounded-lg bg-blue-600 text-white flex items-center justify-center" title="Scan QR">' + icon('scan', 20) + '</button>';
     html += '<button data-action="labels" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600" title="QR Labels">' + icon('printer', 20) + '</button>';
     html += '<button data-action="admin" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600" title="Admin readiness">' + icon('shield', 20) + '</button>';
     html += '</div></div></div>';
@@ -247,14 +444,31 @@
         '<div><div class="font-semibold">WEB_APP_BASE_URL is not configured</div><div class="text-amber-800/90 mt-0.5">Browsing works, but QR generation and external printed links are disabled.</div></div></div>';
     }
 
-    html += '<div class="px-4 pt-3"><div class="route-principle">' +
+    html += '<div class="mobile-scan-panel mx-3 mt-3">' +
+      '<button data-action="open-scanner" class="scan-primary-btn">' + icon('scan', 22) + '<span><strong>Scan QR</strong><small>Open a storage label</small></span></button>' +
+      '<button data-action="focus-search" class="scan-secondary-btn">' + icon('search', 18) + '<span>Search storage</span></button>' +
+      '<div class="mobile-scan-help">Scan a storage label or search by Location Code, room, cupboard, or trolley.</div>' +
+      '</div>';
+
+    html += '<div class="desktop-only px-4 pt-3"><div class="desktop-hero-grid">' +
+      '<div class="route-principle">' +
       '<div class="route-principle-icon">' + icon('scan', 18) + '</div>' +
-      '<div class="min-w-0"><div class="font-display text-[13px] font-semibold text-slate-900">One web app URL, many storage routes</div>' +
-      '<div class="text-[12px] text-slate-600 mt-0.5">Printed QR labels open View Mode first. Authorised staff enter Update inside the app.</div>' +
+      '<div class="min-w-0"><div class="font-display text-[15px] font-semibold text-slate-900">One web app URL, many storage routes</div>' +
+      '<div class="text-[12px] text-slate-600 mt-0.5">Printed QR labels open View Mode first. Authorised staff enter Update inside the app after checking the storage.</div>' +
       '<div class="route-example">/exec?room=419A&amp;loc=419A-FCU-01</div></div>' +
+      '</div>' +
+      '<div class="quick-action-card">' +
+      '<div><div class="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-blue-700">Workshop command</div>' +
+      '<div class="font-display text-[15px] font-semibold text-slate-900 mt-1">Scan, verify, update, audit</div></div>' +
+      '<div class="quick-action-grid">' +
+      '<button data-action="open-scanner" class="quick-action-btn">' + icon('scan', 15) + '<span>Scan QR</span></button>' +
+      '<button data-action="storage" class="quick-action-btn">' + icon('grid', 15) + '<span>Storage Master</span></button>' +
+      '<button data-action="labels" class="quick-action-btn">' + icon('printer', 15) + '<span>QR Labels</span></button>' +
+      '<button data-action="admin" class="quick-action-btn">' + icon('shield', 15) + '<span>Readiness</span></button>' +
+      '</div></div>' +
       '</div></div>';
 
-    html += '<div class="px-4 pt-4 space-y-2">';
+    html += '<div class="desktop-only px-4 pt-4 space-y-2">';
     html += metric('419A rollout', r.pct + '%', r.ready + '/' + r.total + ' storages QR-ready', 'rollout');
     html += '<div class="grid grid-cols-2 md:grid-cols-5 gap-2">' +
       metric('Rooms', totals.totalRooms) +
@@ -265,19 +479,34 @@
       '</div>';
     html += '</div>';
 
-    html += '<div class="px-4 pt-3"><div class="relative">' + icon('search', 16, 'absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400') +
-      '<input id="landingSearch" value="' + esc(route.q || '') + '" class="input pl-10" placeholder="Search room, storage ID, label, code..."/></div></div>';
+    html += '<div class="mobile-search-wrap px-3 md:px-4 pt-3"><div class="relative">' + icon('search', 16, 'absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400') +
+      '<input id="landingSearch" value="' + esc(route.q || '') + '" class="input pl-10" placeholder="Search Location Code, room, cupboard..."/></div></div>';
 
+    html += renderRoomChips(rooms, selectedRoom);
+
+    html += '<div class="mobile-summary-strip mx-3 mt-3">' +
+      '<div><strong>' + esc(r.ready) + '/' + esc(r.total) + '</strong><span>419A QR-ready</span></div>' +
+      '<div><strong>' + esc(warningCount) + '</strong><span>warnings</span></div>' +
+      '<div><strong>' + esc(totals.totalAttention || 0) + '</strong><span>attention</span></div>' +
+      '</div>';
+
+    html += renderStorageSections(rooms, locations);
     html += renderOperationsTiles();
+    return html;
+  }
 
-    html += '<div class="px-4 pt-3 pb-1 flex gap-2 overflow-x-auto no-scrollbar">';
+  function renderRoomChips(rooms, selectedRoom) {
+    var html = '<div class="room-chip-row px-3 md:px-4 pt-3 pb-1 flex gap-2 overflow-x-auto no-scrollbar">';
     html += '<button data-room-tab="All" class="room-tab ' + (selectedRoom === 'All' ? 'is-active' : '') + '">All rooms</button>';
     rooms.forEach(function (room) {
-      html += '<button data-room-tab="' + esc(room.code) + '" class="room-tab ' + (room.rollout ? 'rollout ' : '') + (selectedRoom === room.code ? 'is-active' : '') + '">' + esc(room.code) + (room.rollout ? ' - 419A rollout' : '') + '</button>';
+      html += '<button data-room-tab="' + esc(room.code) + '" class="room-tab ' + (room.rollout ? 'rollout ' : '') + (selectedRoom === room.code ? 'is-active' : '') + '">' + esc(room.code) + (room.rollout ? '<span class="desktop-chip-text"> - 419A rollout</span>' : '') + '</button>';
     });
     html += '</div>';
+    return html;
+  }
 
-    html += '<div class="px-4 pt-3 pb-12 space-y-5">';
+  function renderStorageSections(rooms, locations) {
+    var html = '<div class="storage-sections px-3 md:px-4 pt-3 pb-4 space-y-5">';
     if (!locations.length) {
       html += '<div class="card rounded-2xl p-6 text-center"><div class="text-[14px] font-semibold text-slate-900">No matching storage</div><div class="text-[13px] text-slate-500 mt-1">Try a different room, storage ID or location code.</div></div>';
     }
@@ -296,14 +525,16 @@
   }
 
   function renderOperationsTiles() {
-    return '<div class="px-4 pt-3"><div class="grid grid-cols-2 md:grid-cols-3 gap-2">' +
+    return '<section class="workshop-tools px-3 md:px-4 pt-2 pb-12"><button data-action="toggle-tools" class="workshop-tools-toggle">' +
+      '<span>' + icon('grid', 16) + 'Workshop tools</span><small>' + (toolsOpen ? 'Hide' : 'Show') + '</small></button>' +
+      '<div class="workshop-tools-content ' + (toolsOpen ? 'is-open' : '') + '">' +
       opsTile('storage', 'grid', 'Storage Master', (appData.locations || []).length + ' storages - ' + (appData.locations || []).filter(function (loc) { return loc.qrReady; }).length + ' QR-ready') +
       opsTile('lowstock', 'warn', 'Low Stock', countLowStock() + ' items to review', 'amber') +
       opsTile('maintenance', 'cpu', 'Maintenance & Safety', countMaintenance() + ' maintenance - ' + countChemicals() + ' chemical', 'orange') +
       opsTile('audit', 'list', 'Audit Log', ((appData.audit || []).length || 0) + ' recent events') +
       opsTile('admin', 'shield', 'Readiness', 'Score ' + (((appData.readiness || {}).score) || 0) + ' - ' + (((appData.readiness || {}).errors) || 0) + ' errors') +
       opsTile('labels', 'printer', 'QR Labels', 'Print-ready label preview') +
-      '</div></div>';
+      '</div></section>';
   }
 
   function opsTile(action, iconName, label, hint, tone) {
@@ -456,6 +687,7 @@
       (room.rollout ? '<span class="pill pill-teal" style="padding:2px 7px;font-size:10px">419A</span>' : '') + '</div>' +
       '<h1 class="font-display text-[18px] font-semibold text-slate-900 leading-tight truncate flex items-center gap-1.5">' + esc(loc.label) + (loc.hazard ? icon('hazard', 15, 'text-red-600') : '') + '</h1>' +
       (loc.specific ? '<div class="text-[12px] text-slate-500 mt-0.5 truncate">' + esc(loc.specific) + '</div>' : '') + '</div>' +
+      '<button data-action="open-scanner" class="context-scan-btn tap rounded-lg bg-blue-600 text-white flex items-center justify-center" title="Scan QR">' + icon('scan', 17) + '</button>' +
       modeBadge(route.mode) + '</div><div class="mt-2.5 flex flex-wrap items-center gap-1.5">' +
       (routeId ? '<span class="route-badge"><span>' + esc(routeIdentityLabel(loc)) + '</span><strong>' + esc(routeId) + '</strong></span>' : '') +
       (loc.storageType ? '<span class="pill pill-neutral">' + esc(loc.storageType) + '</span>' : '') +
@@ -611,19 +843,59 @@
   }
 
   function renderLabels() {
-    var labels = appData.locations || [];
+    var allLabels = appData.locations || [];
+    var target = labelPrintTarget();
+    var selectedLabel = target ? allLabels.filter(function (loc) { return labelTargetMatches(loc, target); })[0] : null;
+    var labels = selectedLabel ? [selectedLabel] : allLabels;
+    var preset = labelPrintPreset();
+    var cfg = applyDynamicPrintPreset(preset);
+    var brotherActive = preset !== 'standard';
     var html = topBar('QR Labels - print preview', '<button onclick="window.print()" class="btn btn-primary py-1.5 px-3 text-[12px] mr-2">' + icon('printer', 14) + ' Print</button>');
     if (!BOOT.webAppBaseUrl) {
       html += '<div class="mx-4 mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-[12.5px] text-amber-900">WEB_APP_BASE_URL is not configured. Run this from Google Sheet menu: D&amp;T Inventory - Set WEB_APP_BASE_URL, then Refresh QR Links and Build QR Label Sheet.</div>';
     }
-    html += '<div class="px-4 pt-3 pb-2 space-y-2 text-[12px] text-slate-500">' +
-      '<div>A4, 2 columns, peel-and-stick - ' + labels.length + ' storage/location labels</div>' +
-      '<div class="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-blue-900"><div class="font-semibold">One deployment URL, many labels</div><div class="mt-0.5">Each QR uses the same Apps Script /exec URL plus room and storage route parameters. Labels open View Mode by default; Update remains an in-app action for authorised staff.</div></div>' +
-      '</div><div class="px-4 pb-8"><div class="label-sheet rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-3">';
+    html += '<div class="label-print-controls px-4 pt-3 pb-2 space-y-3 text-[12px] text-slate-500">' +
+      '<div class="rounded-2xl border border-blue-100 bg-blue-50 px-3 py-3 text-blue-950">' +
+      '<div class="flex items-start justify-between gap-3 flex-wrap"><div><div class="font-display text-[16px] font-semibold text-blue-950">' + esc(cfg.title) + '</div><div class="mt-1 text-[13px] text-blue-900">' + esc(cfg.description) + '</div></div><div class="rounded-xl bg-white px-3 py-2 text-[12px] font-semibold text-blue-900 border border-blue-100">' + esc(cfg.printSize) + '</div></div>' +
+      '<div class="mt-2 text-[12.5px] text-blue-900">Brother QL-1110 / QL-1110NWB users should choose the matching continuous label size in the Brother driver, set margins to None, scale to 100%, disable headers/footers, and print a small sample before a batch.</div>' +
+      '</div>' +
+      '<div class="label-mode-tabs flex gap-2 overflow-x-auto no-scrollbar">' +
+      '<button data-action="label-printer-preset" data-printer-preset="standard" class="room-tab ' + (preset === 'standard' ? 'is-active' : '') + '">A4 labels</button>' +
+      '<button data-action="label-printer-preset" data-printer-preset="brother-90x29" class="room-tab ' + (preset === 'brother-90x29' ? 'is-active' : '') + '">Brother 90x29</button>' +
+      '<button data-action="label-printer-preset" data-printer-preset="brother-102x50" class="room-tab ' + (preset === 'brother-102x50' ? 'is-active' : '') + '">Brother 102x50</button>' +
+      '<button data-action="label-printer-preset" data-printer-preset="brother-102x70" class="room-tab ' + (preset === 'brother-102x70' ? 'is-active' : '') + '">Brother 102x70 safety</button>' +
+      '</div>' +
+      '<div class="label-single-print rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700">' +
+      (selectedLabel ? '<div class="font-semibold text-slate-900">Single-label print: ' + esc(routeIdentity(selectedLabel) || selectedLabel.label) + '</div><div class="mt-0.5">Only one label is shown and will be printed. Use this for sample labels or replacing one damaged label.</div><button data-action="label-print-all" class="btn btn-secondary mt-2 py-2 px-3 text-[12px]">Show all labels</button>' : '<div class="font-semibold text-slate-900">Print one label only</div><div class="mt-0.5">Use the “Print this label” button on any preview below. The page will switch to one label and open the print dialog.</div>') +
+      (target && !selectedLabel ? '<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900">Selected label was not found. Showing all labels instead.</div>' : '') +
+      '</div>' +
+      '<div class="label-selector rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700"><label class="block text-[12px] font-semibold text-slate-700">Choose one label to print<select id="labelPrintSelect" class="select mt-1"><option value="">Select storage label...</option>' +
+      allLabels.map(function (loc) { return '<option value="' + esc(loc.key) + '" ' + (selectedLabel && loc.key === selectedLabel.key ? 'selected' : '') + '>' + esc((routeIdentity(loc) || loc.label) + ' - ' + loc.label) + '</option>'; }).join('') +
+      '</select></label><div class="mt-2 flex gap-2 flex-wrap"><button data-action="label-preview-selected" class="btn btn-secondary py-2 px-3 text-[12px]">Preview one label</button><button data-action="label-print-selected" class="btn btn-primary py-2 px-3 text-[12px]">' + icon('printer', 14) + ' Print selected label</button></div></div>' +
+      '<div class="label-printer-notes rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700"><div class="font-semibold text-slate-900">One deployment URL, many labels</div><div class="mt-0.5">Each QR uses the same Apps Script /exec URL plus room and storage route parameters. Labels open View Mode by default; Update remains an in-app action for authorised staff.</div></div>' +
+      '<div>' + esc(cfg.density) + ' - ' + labels.length + (selectedLabel ? ' selected label' : ' storage/location labels') + '</div>' +
+      '</div><div class="' + (brotherActive ? 'label-print-stage is-brother-stage' : 'px-4 pb-8') + '"><div class="label-sheet ' + esc(cfg.sheetClass) + ' rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-3">';
     labels.forEach(function (loc) {
       var routeId = routeIdentity(loc);
-      html += '<div class="qr-label"><div class="bg-white border border-slate-900 p-1.5 shrink-0" style="width:86px;height:86px">' + (loc.qrImageUrl ? '<img src="' + esc(loc.qrImageUrl) + '" alt="QR code" width="72" height="72"/>' : '<div class="qr-glyph w-full h-full"></div>') + '</div>' +
-        '<div class="min-w-0 flex-1"><div class="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">VSA D&amp;T - ' + esc(loc.room) + '</div><div class="font-display text-[14px] font-semibold text-slate-900 truncate mt-0.5">' + esc(loc.label) + '</div><div class="text-[11px] text-slate-500 truncate">' + esc(loc.specific || '') + '</div>' + (routeId ? '<div class="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-900 text-white text-[10px] font-mono rounded">' + esc(routeId) + '</div>' : '') + (loc.hazard ? '<div class="mt-1 text-[10px] font-semibold text-red-700">HAZARD STORAGE - CHECK SAFETY FIRST</div>' : '') + '<div class="mt-1.5">' + (loc.qrReady ? '<span class="pill pill-good">View QR ready</span>' : '<span class="pill pill-low">QR link missing</span>') + '</div><div class="text-[10px] text-slate-500 mt-1.5 truncate">View: ' + esc(loc.absoluteViewUrl || loc.viewUrl || '') + '</div><div class="text-[10px] text-slate-500 truncate">Update: ' + esc(loc.absoluteTechUrl || loc.techUrl || '') + '</div></div></div>';
+      var viewUrl = loc.absoluteViewUrl || loc.viewUrl || '';
+      var updateUrlText = loc.absoluteTechUrl || loc.techUrl || '';
+      var qr = loc.qrImageUrl ? '<img src="' + esc(loc.qrImageUrl) + '" alt="QR code" width="72" height="72"/>' : '<div class="qr-glyph w-full h-full"></div>';
+      var singlePrintAction = '<div class="label-single-actions"><button data-action="label-print-one" data-label-key="' + esc(loc.key || routeId || loc.label) + '" class="btn btn-primary py-2 px-3 text-[12px]">' + icon('printer', 14) + ' Print this label</button></div>';
+      if (brotherActive) {
+        html += '<div class="qr-label brother-ql-label ' + (loc.hazard ? 'is-hazard' : '') + '"><div class="brother-label-body">' +
+          '<div class="brother-label-copy"><div class="brother-label-brand">VSA / D&amp;T INVENTORY</div>' +
+          '<div class="brother-label-room">Room ' + esc(loc.room) + '</div>' +
+          '<div class="brother-label-code">' + esc(routeId || loc.label) + '</div>' +
+          '<div class="brother-label-title">' + esc(loc.label) + '</div>' +
+          '<div class="brother-label-subtitle">' + esc(loc.specific || loc.storageType || '') + '</div>' +
+          '<div class="brother-label-scan">Scan to view inventory</div>' +
+          (loc.hazard ? '<div class="brother-label-hazard">HAZARD STORAGE - CHECK SAFETY FIRST</div>' : '') +
+          '</div><div class="brother-label-qr">' + qr + '</div></div>' +
+          '<div class="brother-label-url">View: ' + esc(viewUrl) + '</div>' + singlePrintAction + '</div>';
+      } else {
+        html += '<div class="qr-label"><div class="bg-white border border-slate-900 p-1.5 shrink-0" style="width:86px;height:86px">' + qr + '</div>' +
+          '<div class="min-w-0 flex-1"><div class="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">VSA D&amp;T - ' + esc(loc.room) + '</div><div class="font-display text-[14px] font-semibold text-slate-900 truncate mt-0.5">' + esc(loc.label) + '</div><div class="text-[11px] text-slate-500 truncate">' + esc(loc.specific || '') + '</div>' + (routeId ? '<div class="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-900 text-white text-[10px] font-mono rounded">' + esc(routeId) + '</div>' : '') + (loc.hazard ? '<div class="mt-1 text-[10px] font-semibold text-red-700">HAZARD STORAGE - CHECK SAFETY FIRST</div>' : '') + '<div class="mt-1.5">' + (loc.qrReady ? '<span class="pill pill-good">View QR ready</span>' : '<span class="pill pill-low">QR link missing</span>') + '</div><div class="text-[10px] text-slate-500 mt-1.5 truncate">View: ' + esc(viewUrl) + '</div><div class="text-[10px] text-slate-500 truncate">Update: ' + esc(updateUrlText) + '</div>' + singlePrintAction + '</div></div>';
+      }
     });
     if (!labels.length) html += '<div class="col-span-2 text-center py-12 text-[13px] text-slate-500">No storage locations available for labels yet.</div>';
     html += '</div></div>';
@@ -798,7 +1070,271 @@
   }
 
   function topBar(title, right) {
-    return '<div class="topbar px-2 py-2 bg-white border-b border-slate-200 flex items-center gap-1 sticky top-0 z-10"><button data-action="back" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-700">' + icon('arrow-left', 20) + '</button><div class="topbar-title flex-1 text-[13.5px] font-semibold text-slate-900 truncate">' + esc(title) + '</div>' + (right || '') + '</div>';
+    return '<div class="topbar px-2 py-2 bg-white border-b border-slate-200 flex items-center gap-1 sticky top-0 z-10"><button data-action="back" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-700">' + icon('arrow-left', 20) + '</button><div class="topbar-title flex-1 text-[13.5px] font-semibold text-slate-900 truncate">' + esc(title) + '</div><button data-action="open-scanner" class="tap rounded-lg hover:bg-blue-50 flex items-center justify-center text-blue-700" title="Scan QR">' + icon('scan', 18) + '</button>' + (right || '') + '</div>';
+  }
+
+  function renderScannerOverlay() {
+    var suggestions = (scannerState.suggestions || []).map(function (loc) {
+      return '<button data-action="scanner-suggestion" data-location-key="' + esc(loc.key) + '" class="scanner-suggestion">' +
+        '<strong>' + esc(routeIdentity(loc) || loc.label) + '</strong><span>' + esc(loc.room + ' - ' + loc.label) + '</span></button>';
+    }).join('');
+    var cameraOverlay = scannerState.stream ? '' :
+      '<div class="scanner-camera-prompt"><div class="scanner-camera-title">Camera is off</div>' +
+      '<div class="scanner-camera-copy">Tap Start camera and allow camera access when your phone asks.</div>' +
+      '<button data-action="scanner-start-camera" class="scanner-camera-start">' + icon('scan', 18) + ' Start camera</button></div>';
+    return '<div class="scanner-overlay" role="dialog" aria-modal="true" aria-label="QR scanner">' +
+      '<div class="scanner-sheet">' +
+      '<div class="scanner-header"><div><div class="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-blue-700">D&amp;T Inventory</div><h2 class="font-display text-[18px] font-semibold text-slate-900">Scan storage QR</h2></div><button data-action="close-scanner" class="tap rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">' + icon('minus', 18) + '</button></div>' +
+      '<div class="scanner-camera"><video id="scannerVideo" autoplay muted playsinline></video><canvas id="scannerCanvas" class="hidden"></canvas><div class="scanner-reticle"></div>' + cameraOverlay + '</div>' +
+      '<div class="scanner-status ' + (scannerState.error ? 'is-error' : '') + '">' + (scannerState.error ? icon('warn', 14) + esc(scannerState.error) : icon('scan', 14) + esc(scannerState.message || 'Point the camera at a D&T storage label. QR opens View Mode by default.')) + '</div>' +
+      '<div class="scanner-fallback"><label>Enter Location Code or paste QR URL<input id="scannerManualInput" class="input mt-1" value="' + esc(scannerState.manual || '') + '" placeholder="419A-FCU-01 or /exec?room=419A&amp;loc=..."/></label>' +
+      '<div class="grid grid-cols-2 gap-2 mt-2"><button data-action="scanner-open-view" class="btn btn-primary">' + icon('search', 14) + ' Open View</button><button data-action="scanner-open-update" class="btn btn-secondary">' + icon('edit', 14) + ' Open Update</button></div>' +
+      '<div class="scanner-suggestions">' + (suggestions ? '<div class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.14em]">Suggestions</div>' + suggestions : '') + '</div>' +
+      '</div></div></div>';
+  }
+
+  function openScanner() {
+    scannerState.open = true;
+    scannerState.error = '';
+    scannerState.message = 'Tap Start camera to scan, or enter a Location Code below.';
+    scannerState.suggestions = [];
+    render();
+  }
+
+  function stopScanner() {
+    if (scannerState.raf) {
+      cancelAnimationFrame(scannerState.raf);
+      scannerState.raf = 0;
+    }
+    if (scannerState.stream) {
+      scannerState.stream.getTracks().forEach(function (track) { track.stop(); });
+    scannerState.stream = null;
+    }
+    scannerState.starting = false;
+    scannerState.cameraRequested = false;
+  }
+
+  function closeScanner() {
+    stopScanner();
+    scannerState.open = false;
+    scannerState.error = '';
+    scannerState.message = '';
+    scannerState.suggestions = [];
+    scannerState.cameraRequested = false;
+  }
+
+  function startScanner() {
+    if (scannerState.starting || scannerState.stream) return;
+    var video = document.getElementById('scannerVideo');
+    if (!video || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      scannerState.error = 'Camera unavailable in this browser. Open the app in Safari/Chrome, or enter a Location Code below.';
+      updateScannerStatus();
+      return;
+    }
+    if (!window.isSecureContext) {
+      scannerState.error = 'Camera requires HTTPS. Open the deployed /exec link directly, or enter a Location Code below.';
+      updateScannerStatus();
+      return;
+    }
+    scannerState.cameraRequested = true;
+    scannerState.starting = true;
+    scannerState.message = 'Requesting camera permission...';
+    scannerState.error = '';
+    updateScannerStatus();
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false })
+      .then(function (stream) {
+        scannerState.stream = stream;
+        scannerState.starting = false;
+        video.srcObject = stream;
+        scannerState.message = 'Scanning...';
+        scannerState.error = '';
+        var prompt = root && root.querySelector('.scanner-camera-prompt');
+        if (prompt) prompt.remove();
+        updateScannerStatus();
+        return video.play();
+      })
+      .then(function () {
+        scanFrame();
+      })
+      .catch(function (err) {
+        scannerState.starting = false;
+        var name = err && err.name ? err.name : '';
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+          scannerState.error = 'Camera access is blocked. Allow camera permission for this site, or open the /exec link directly in Safari/Chrome. You can still enter a Location Code below.';
+        } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+          scannerState.error = 'No camera was found on this device. Enter a Location Code or paste a QR URL below.';
+        } else {
+          scannerState.error = 'Camera could not start on this browser. Try Safari/Chrome, or enter a Location Code below.';
+        }
+        updateScannerStatus();
+      });
+  }
+
+  function updateScannerStatus() {
+    var status = root && root.querySelector('.scanner-status');
+    if (!status) return;
+    status.className = 'scanner-status ' + (scannerState.error ? 'is-error' : '');
+    status.innerHTML = (scannerState.error ? icon('warn', 14) + esc(scannerState.error) : icon('scan', 14) + esc(scannerState.message || 'Scanning...'));
+  }
+
+  function scanFrame() {
+    var video = document.getElementById('scannerVideo');
+    if (!scannerState.open || !video || !scannerState.stream) return;
+    if ('BarcodeDetector' in window) {
+      try {
+        if (!scannerState.detector) scannerState.detector = new BarcodeDetector({ formats: ['qr_code'] });
+        scannerState.detector.detect(video).then(function (codes) {
+          if (codes && codes.length) return handleScanText(codes[0].rawValue || '');
+          scannerState.raf = requestAnimationFrame(scanFrame);
+        }).catch(function () {
+          scanWithJsQr(video);
+        });
+        return;
+      } catch (err) {
+        scanWithJsQr(video);
+        return;
+      }
+    }
+    scanWithJsQr(video);
+  }
+
+  function scanWithJsQr(video) {
+    ensureJsQr(function () {
+      var canvas = document.getElementById('scannerCanvas');
+      if (!canvas || !window.jsQR || !video.videoWidth || !video.videoHeight) {
+        scannerState.raf = requestAnimationFrame(scanFrame);
+        return;
+      }
+      var size = Math.min(video.videoWidth, video.videoHeight);
+      var sx = Math.max(0, Math.floor((video.videoWidth - size) / 2));
+      var sy = Math.max(0, Math.floor((video.videoHeight - size) / 2));
+      canvas.width = size;
+      canvas.height = size;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+      var image = ctx.getImageData(0, 0, size, size);
+      var code = window.jsQR(image.data, image.width, image.height);
+      if (code && code.data) return handleScanText(code.data);
+      scannerState.raf = requestAnimationFrame(scanFrame);
+    }, function () {
+      scannerState.error = 'Camera is open, but QR decoding is unavailable. Enter a Location Code or paste a QR URL below.';
+      updateScannerStatus();
+    });
+  }
+
+  function ensureJsQr(done, fail) {
+    if (window.jsQR) return done();
+    if (document.getElementById('jsqrLoader')) {
+      setTimeout(function () { ensureJsQr(done, fail); }, 250);
+      return;
+    }
+    var script = document.createElement('script');
+    script.id = 'jsqrLoader';
+    script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+    script.onload = done;
+    script.onerror = fail;
+    document.head.appendChild(script);
+  }
+
+  function handleScanText(text) {
+    var resolved = resolveScanInput(text);
+    if (!resolved.loc) {
+      scannerState.manual = textValue(text);
+      scannerState.error = 'QR was read, but no matching storage was found. Check the code below.';
+      scannerState.suggestions = findScanSuggestions(text);
+      render();
+      return;
+    }
+    scannerState.message = 'Opening ' + (routeIdentity(resolved.loc) || resolved.loc.label) + '...';
+    updateScannerStatus();
+    setTimeout(function () {
+      goLocation(resolved.loc, 'view');
+    }, 180);
+  }
+
+  function openManualScan(mode) {
+    var input = document.getElementById('scannerManualInput');
+    var raw = textValue(input && input.value);
+    scannerState.manual = raw;
+    var resolved = resolveScanInput(raw);
+    if (!resolved.loc) {
+      scannerState.error = raw ? 'No matching storage. Choose a suggestion or check the Location Code.' : 'Enter a Location Code or paste a QR URL.';
+      scannerState.suggestions = findScanSuggestions(raw);
+      render();
+      return;
+    }
+    goLocation(resolved.loc, mode === 'tech' ? 'tech' : 'view');
+  }
+
+  function resolveScanInput(raw) {
+    var text = textValue(raw);
+    if (!text) return { loc: null };
+    var room = '';
+    var loc = '';
+    try {
+      var parsed = new URL(text, window.location.href);
+      room = parsed.searchParams.get('room') || '';
+      loc = parsed.searchParams.get('loc') || '';
+    } catch (err) {
+      if (text.indexOf('room=') !== -1 || text.indexOf('loc=') !== -1) {
+        var q = text.charAt(0) === '?' ? text.slice(1) : text;
+        var params = new URLSearchParams(q);
+        room = params.get('room') || '';
+        loc = params.get('loc') || '';
+      }
+    }
+    if (room && loc) return { loc: findLocationByRoomLoc(room, loc) };
+    var exact = findLocationByAnyIdentity(text);
+    if (exact) return { loc: exact };
+    var suggestions = findScanSuggestions(text);
+    return { loc: suggestions.length === 1 ? suggestions[0] : null };
+  }
+
+  function normScan(value) {
+    var raw = String(value == null ? '' : value).replace(/\+/g, '%2B');
+    try {
+      return decodeURIComponent(raw).trim().toLowerCase().replace(/\s+/g, ' ');
+    } catch (err) {
+      return String(value == null ? '' : value).trim().toLowerCase().replace(/\s+/g, ' ');
+    }
+  }
+
+  function findLocationByRoomLoc(room, locText) {
+    var roomNorm = normScan(room);
+    var locNorm = normScan(locText);
+    return (appData.locations || []).filter(function (loc) {
+      if (normScan(loc.room) !== roomNorm) return false;
+      return locationIdentityValues(loc).some(function (value) { return normScan(value) === locNorm; });
+    })[0] || null;
+  }
+
+  function findLocationByAnyIdentity(raw) {
+    var n = normScan(raw);
+    return (appData.locations || []).filter(function (loc) {
+      return locationIdentityValues(loc).some(function (value) { return normScan(value) === n; });
+    })[0] || null;
+  }
+
+  function locationIdentityValues(loc) {
+    return [loc.routeLoc, loc.id, loc.code, loc.storageId, loc.storageLabel, loc.label, loc.specific].filter(Boolean);
+  }
+
+  function findScanSuggestions(raw) {
+    var n = normScan(raw);
+    if (!n) return [];
+    return (appData.locations || []).filter(function (loc) {
+      return [
+        loc.searchText,
+        loc.routeLoc,
+        loc.id,
+        loc.code,
+        loc.storageId,
+        loc.storageLabel,
+        loc.label,
+        loc.specific,
+        loc.room
+      ].filter(Boolean).join(' ').toLowerCase().indexOf(n) !== -1;
+    }).slice(0, 5);
   }
 
   function bindCurrentRoute() {
@@ -831,6 +1367,19 @@
       route.category = categoryFilter.value;
       render();
     });
+    var scannerManualInput = document.getElementById('scannerManualInput');
+    if (scannerManualInput) scannerManualInput.addEventListener('input', function () {
+      scannerState.manual = scannerManualInput.value;
+      scannerState.suggestions = findScanSuggestions(scannerManualInput.value);
+      var wrap = root.querySelector('.scanner-suggestions');
+      if (wrap) {
+        var suggestions = scannerState.suggestions.map(function (loc) {
+          return '<button data-action="scanner-suggestion" data-location-key="' + esc(loc.key) + '" class="scanner-suggestion"><strong>' + esc(routeIdentity(loc) || loc.label) + '</strong><span>' + esc(loc.room + ' - ' + loc.label) + '</span></button>';
+        }).join('');
+        wrap.innerHTML = suggestions ? '<div class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.14em]">Suggestions</div>' + suggestions : '';
+        wrap.querySelectorAll('[data-action="scanner-suggestion"]').forEach(function (el) { el.addEventListener('click', handleAction); });
+      }
+    });
     root.querySelectorAll('[data-action="qty"]').forEach(function (input) {
       input.addEventListener('input', function () {
         var raw = input.value;
@@ -849,9 +1398,38 @@
   function handleAction(event) {
     var el = event.currentTarget;
     var action = el.getAttribute('data-action');
-    if (action === 'labels') {
+    if (action === 'open-scanner') {
+      openScanner();
+    } else if (action === 'scanner-start-camera') {
+      startScanner();
+    } else if (action === 'close-scanner') {
+      closeScanner();
+      render();
+    } else if (action === 'scanner-open-view') {
+      openManualScan('view');
+    } else if (action === 'scanner-open-update') {
+      openManualScan('tech');
+    } else if (action === 'scanner-suggestion') {
+      var scanLoc = findLocationByKey(el.getAttribute('data-location-key'));
+      if (scanLoc) goLocation(scanLoc, 'view');
+    } else if (action === 'focus-search') {
+      var landingSearch = document.getElementById('landingSearch');
+      if (landingSearch) landingSearch.focus();
+    } else if (action === 'toggle-tools') {
+      toolsOpen = !toolsOpen;
+      render();
+    } else if (action === 'labels') {
       updateUrl({ admin: 'labels' });
       setRoute({ name: 'labels' });
+    } else if (action === 'label-printer-preset') {
+      setLabelPrintPreset(el.getAttribute('data-printer-preset') || 'standard');
+    } else if (action === 'label-print-one') {
+      setLabelPrintTarget(el.getAttribute('data-label-key') || '', true);
+    } else if (action === 'label-preview-selected' || action === 'label-print-selected') {
+      var labelSelect = document.getElementById('labelPrintSelect');
+      setLabelPrintTarget(labelSelect ? labelSelect.value : '', action === 'label-print-selected');
+    } else if (action === 'label-print-all') {
+      setLabelPrintTarget('', false);
     } else if (action === 'storage') {
       updateUrl({ admin: 'storage' });
       setRoute({ name: 'storage', room: 'All' });

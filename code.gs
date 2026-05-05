@@ -18,8 +18,8 @@ const CONFIG = Object.freeze({
   APP_TITLE: 'D&T QR Inventory System',
   HEADER_ROW: 1,
   DEFAULT_SHEET_NAME: 'Inventory',
-  DEFAULT_SPREADSHEET_ID: '1GqK9XsPdTiPREhVXLeexreZ7cCfZJJ7FNueotpSZpqM',
-  DEFAULT_WEB_APP_BASE_URL: 'https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec',
+  DEFAULT_SPREADSHEET_ID: '',
+  DEFAULT_WEB_APP_BASE_URL: '',
   SPREADSHEET_ID_PROPERTY: 'SPREADSHEET_ID',
   WEB_APP_URL_PROPERTY: 'WEB_APP_BASE_URL',
   INVENTORY_SHEET_NAME_PROPERTY: 'INVENTORY_SHEET_NAME',
@@ -1934,7 +1934,19 @@ function buildQrLabelSheet() {
   const statsByKey = getLocationStatsByKey_();
   const ss = getSpreadsheet_();
   const sheet = getOrCreateSheet_(ss, CONFIG.QR_LABEL_SHEET_NAME);
-  const headers = ['Room', 'Specific Location', 'Storage ID', 'Storage Label', 'Location Code', 'View URL', 'Update URL', 'QR Image Formula', 'Print Label Text'];
+  const headers = [
+    'Room',
+    'Specific Location',
+    'Storage ID',
+    'Storage Label',
+    'Location Code',
+    'View URL',
+    'Update URL',
+    'QR Image Formula',
+    'Print Label Text',
+    'Brother QL-1110 Label Size',
+    'Printer Notes'
+  ];
   const output = locations.map(function (entry) {
     const stats = statsByKey[entry.canonicalKey] || {};
     const displayName = entry.displayLoc || entry.loc;
@@ -1948,6 +1960,10 @@ function buildQrLabelSheet() {
       'Scan to view inventory'
     ];
     if (stats.chemicalCount) labelLines.push('HAZARD STORAGE - CHECK SAFETY FIRST');
+    const brotherSize = stats.chemicalCount ? '102mm x 70mm safety' : '102mm x 50mm or 90mm x 29mm';
+    const printerNotes = stats.chemicalCount
+      ? 'Use Brother 102mm safety preset; 90mm x 29mm is not recommended for hazard labels; print sample first.'
+      : 'Use Brother 102mm compact/safety preset, or 90mm x 29mm slim preset for short labels; print sample first; scale 100%.';
     return [
       entry.room,
       entry.loc,
@@ -1957,7 +1973,9 @@ function buildQrLabelSheet() {
       viewUrl,
       techUrl,
       '',
-      labelLines.join('\n')
+      labelLines.join('\n'),
+      brotherSize,
+      printerNotes
     ];
   });
 
@@ -1969,7 +1987,7 @@ function buildQrLabelSheet() {
       const row = i + 2;
       sheet.getRange(row, 8).setFormula('=IF(F' + row + '="","",IMAGE("' + CONFIG.QUICKCHART_QR_BASE + '"&ENCODEURL(F' + row + ')))');
     }
-    sheet.getRange(2, 9, output.length, 1).setWrap(true);
+    sheet.getRange(2, 9, output.length, 3).setWrap(true);
   }
 
   sheet.setFrozenRows(1);
@@ -1983,6 +2001,8 @@ function buildQrLabelSheet() {
   sheet.setColumnWidth(7, 520);
   sheet.setColumnWidth(8, 120);
   sheet.setColumnWidth(9, 260);
+  sheet.setColumnWidth(10, 160);
+  sheet.setColumnWidth(11, 320);
 
   return { success: true, sheetName: sheet.getName(), labelCount: output.length };
 }

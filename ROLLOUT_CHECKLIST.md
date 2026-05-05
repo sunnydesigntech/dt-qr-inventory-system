@@ -1,11 +1,11 @@
 # D&T QR Inventory Rollout Checklist
 
-This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@18`; version `@17` is retained in Apps Script version history as the real-use add/remove and clickable Storage_Master workflow fallback.
+This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@28`; version `@27` is retained in Apps Script version history as the previous 90x29 label fit fallback.
 
 Production URL:
 
 ```text
-https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec
+https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec
 ```
 
 ## Student / Staff Workflow
@@ -96,6 +96,15 @@ Do not directly edit:
 10. Confirm each scan opens View Mode for the correct storage.
 
 The system has one Apps Script web app URL. QR labels do not point to separate apps or separate pages; they point to the same `/exec` URL with route parameters such as `?room=419A&loc=419A-CHEM-001`. The QR code should scan to View Mode by default. Update Mode is available from the in-app Update button for authorised stock checks.
+
+Brother QL-1110 / QL-1110NWB printing is supported through browser print presets on the QR Labels page:
+
+- `/exec?admin=labels&printer=brother-ql1110`
+- `Brother 90x29` for slim short-label printing.
+- `Brother 102x50` for compact normal-storage labels.
+- `Brother 102x70 safety` for mixed/chemical labels with hazard text.
+
+Each label preview includes `Print this label`, and the QR Labels page includes a `Choose one label to print` selector for single-label replacement/sample printing. Use the Brother driver or AirPrint print dialog, choose the matching continuous roll size, set margins to `None`, set scale to 100%, disable browser headers/footers, and print a small sample before any batch. Chrome default margins can crop the QR code on 90mm x 29mm labels.
 
 ## Go-Live Gate
 
