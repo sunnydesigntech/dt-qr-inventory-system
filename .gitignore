@@ -1,0 +1,9 @@
+.claude/
+node_modules/
+.DS_Store
+.clasp.json
+preview.html
+*.xlsx
+outputs/
+prototype/
+UI demo/
