@@ -18,8 +18,8 @@ const CONFIG = Object.freeze({
   APP_TITLE: 'D&T QR Inventory System',
   HEADER_ROW: 1,
   DEFAULT_SHEET_NAME: 'Inventory',
-  DEFAULT_SPREADSHEET_ID: '1GqK9XsPdTiPREhVXLeexreZ7cCfZJJ7FNueotpSZpqM',
-  DEFAULT_WEB_APP_BASE_URL: 'https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec',
+  DEFAULT_SPREADSHEET_ID: '',
+  DEFAULT_WEB_APP_BASE_URL: '',
   SPREADSHEET_ID_PROPERTY: 'SPREADSHEET_ID',
   WEB_APP_URL_PROPERTY: 'WEB_APP_BASE_URL',
   INVENTORY_SHEET_NAME_PROPERTY: 'INVENTORY_SHEET_NAME',
@@ -33,6 +33,9 @@ const CONFIG = Object.freeze({
   AUDIT_LOG_SHEET_NAME: 'Audit_Log',
   QR_LABEL_SHEET_NAME: 'QR_Labels',
   READINESS_REPORT_SHEET_NAME: 'Inventory_Readiness_Report',
+  WARNING_TRIAGE_SHEET_NAME: 'Readiness_Warning_Triage',
+  UNMATCHED_REVIEW_SHEET_NAME: '419A_Unmatched_Review',
+  PILOT_TEST_LOG_SHEET_NAME: 'PILOT_TEST_LOG',
   DEBUG_PANEL: false,
   ALIASES: {
     itemId: ['item id', 'itemid', 'id'],
@@ -143,8 +146,11 @@ function onOpen() {
     .addItem('Build Storage Master', 'menuBuildStorageMasterSheet')
     .addItem('Build QR Label Sheet', 'menuBuildQrLabelSheet')
     .addItem('Create Readiness Report', 'menuCreateReadinessReport')
+    .addItem('Create Warning Triage Board', 'menuCreateWarningTriageBoard')
     .addSeparator()
     .addItem('419A Readiness Summary', 'show419AReadiness')
+    .addItem('Prepare 419A Unmatched Review', 'menuPrepareUnmatchedReview')
+    .addItem('Create Pilot Test Log', 'menuCreatePilotTestLog')
     .addItem('Import 419A Storage Master', 'promptImport419AStorageMaster')
     .addItem('Import 419A App Load Ready', 'promptImport419AReady')
     .addSeparator()
@@ -245,6 +251,50 @@ function menuCreateReadinessReport() {
     );
   } catch (err) {
     ui.alert('Readiness Report Failed', err.message || String(err), ui.ButtonSet.OK);
+  }
+}
+
+function menuCreateWarningTriageBoard() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const result = createWarningTriageBoard();
+    ui.alert(
+      'Warning Triage Board Ready',
+      'Created/updated "' + result.sheetName + '" with ' + result.warningCount + ' warning row(s).\n' +
+        'Warnings are now grouped, assigned, and ready for pilot decisions.',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('Warning Triage Board Failed', err.message || String(err), ui.ButtonSet.OK);
+  }
+}
+
+function menuPrepareUnmatchedReview() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const result = prepare419AUnmatchedReviewSheet();
+    ui.alert(
+      '419A Unmatched Review Ready',
+      'Prepared "' + result.sheetName + '" with ' + result.reviewRows + ' review row(s).\n' +
+        'No rows were imported into Inventory.',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('419A Unmatched Review Failed', err.message || String(err), ui.ButtonSet.OK);
+  }
+}
+
+function menuCreatePilotTestLog() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const result = createPilotTestLog();
+    ui.alert(
+      'Pilot Test Log Ready',
+      'Created/updated "' + result.sheetName + '" with ' + result.templateRows + ' starter test row(s).',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('Pilot Test Log Failed', err.message || String(err), ui.ButtonSet.OK);
   }
 }
 
@@ -1039,13 +1089,14 @@ function saveInventoryUpdates(payload) {
         room: cleanString_(row[map.room]),
         storageId: getOptionalValue_(row, map.storageId),
         location: cleanString_(row[map.location]),
+        routeLoc: loc,
         itemId: cleanString_(row[map.itemId]),
         itemName: cleanString_(row[map.itemName]),
         oldQty: oldQty,
         newQty: qty,
         oldStatus: oldStatus,
         newStatus: status,
-        notes: 'Update Mode save'
+        notes: 'Update Mode save; route=' + loc
       });
     }
   });
@@ -1060,6 +1111,149 @@ function saveInventoryUpdates(payload) {
     loc: loc,
     rows: refreshedRows,
     html: renderInventoryHtml_(refreshedRows, 'tech'),
+    timestamp: new Date().toISOString()
+  };
+}
+
+function addInventoryItemToLocation(payload) {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Invalid add-item payload.');
+  }
+
+  const room = cleanString_(payload.room);
+  const loc = cleanString_(payload.loc);
+  const item = payload.item || {};
+  if (!room || !loc) {
+    throw new Error('Room and location are required to add an item.');
+  }
+
+  const itemName = cleanString_(item.itemName);
+  if (!itemName) {
+    throw new Error('Item name is required.');
+  }
+
+  const qty = Number(item.qty);
+  if (!Number.isFinite(qty) || qty < 0) {
+    throw new Error('Quantity must be a non-negative number.');
+  }
+
+  const status = matchStatus_(item.status);
+  if (!status) {
+    throw new Error('Invalid status: ' + cleanString_(item.status));
+  }
+
+  const sheet = getInventorySheet_();
+  const values = sheet.getDataRange().getValues();
+  if (!values.length) throw new Error('The inventory sheet is empty.');
+
+  const map = getColumnMap_(values[0], { requireQrLink: false });
+  const context = findLocationContextRow_(values, map, room, loc);
+  if (!context) {
+    throw new Error('Storage location not found. Add items only from a valid storage page.');
+  }
+
+  const actor = getActiveUserEmail_();
+  const timestamp = new Date();
+  const newRow = buildNewInventoryRow_(values[0].length, map, context.row, {
+    itemId: cleanString_(item.itemId) || generateItemId_(room, loc, itemName),
+    itemName: itemName,
+    qty: qty,
+    unit: cleanString_(item.unit),
+    category: cleanString_(item.category) || 'Tools',
+    status: status,
+    remarks: cleanString_(item.remarks),
+    actor: actor,
+    timestamp: timestamp
+  });
+
+  const rowNumber = sheet.getLastRow() + 1;
+  sheet.getRange(rowNumber, 1, 1, newRow.length).setValues([newRow]);
+  setQrImageFormulaForRow_(sheet, map, rowNumber);
+
+  appendAuditEvents_([{
+    timestamp: timestamp,
+    user: actor,
+    action: 'Add item',
+    room: room,
+    storageId: getOptionalValue_(context.row, map.storageId),
+    location: cleanString_(context.row[map.location]),
+    routeLoc: loc,
+    itemId: newRow[map.itemId],
+    itemName: itemName,
+    oldQty: '',
+    newQty: qty,
+    oldStatus: '',
+    newStatus: status,
+    notes: 'Update Mode add item; route=' + loc
+  }]);
+
+  return {
+    success: true,
+    addedRow: rowNumber,
+    rows: getInventoryRowsForLocation_(room, loc),
+    timestamp: new Date().toISOString()
+  };
+}
+
+function removeInventoryItemFromLocation(payload) {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Invalid remove-item payload.');
+  }
+
+  const room = cleanString_(payload.room);
+  const loc = cleanString_(payload.loc);
+  const rowNum = Number(payload.sheetRow);
+  if (!room || !loc) throw new Error('Room and location are required to remove an item.');
+  if (!Number.isInteger(rowNum) || rowNum <= CONFIG.HEADER_ROW) {
+    throw new Error('Invalid row number for removal.');
+  }
+
+  const sheet = getInventorySheet_();
+  const values = sheet.getDataRange().getValues();
+  if (rowNum > values.length) throw new Error('The selected row no longer exists. Refresh and try again.');
+
+  const map = getColumnMap_(values[0], { requireQrLink: false });
+  const row = values[rowNum - 1];
+  if (!rowMatchesRoomLoc_(row, map, room.toLowerCase(), loc.toLowerCase())) {
+    throw new Error('The selected item does not belong to this storage.');
+  }
+  if (!isInventoryItemRow_(row, map)) {
+    throw new Error('Only real inventory item rows can be removed.');
+  }
+
+  const actor = getActiveUserEmail_();
+  const timestamp = new Date();
+  const matching = countLocationRows_(values, map, room, loc);
+  if (matching.total <= 1 && !matching.hasPlaceholder) {
+    const placeholder = buildPlaceholderRowFromContext_(values[0].length, map, row, actor, timestamp);
+    const placeholderRow = sheet.getLastRow() + 1;
+    sheet.getRange(placeholderRow, 1, 1, placeholder.length).setValues([placeholder]);
+    setQrImageFormulaForRow_(sheet, map, placeholderRow);
+  }
+
+  appendAuditEvents_([{
+    timestamp: timestamp,
+    user: actor,
+    action: 'Remove item',
+    room: cleanString_(row[map.room]),
+    storageId: getOptionalValue_(row, map.storageId),
+    location: cleanString_(row[map.location]),
+    routeLoc: loc,
+    itemId: cleanString_(row[map.itemId]),
+    itemName: cleanString_(row[map.itemName]),
+    oldQty: row[map.qty],
+    newQty: '',
+    oldStatus: normalizeStatus_(row[map.status]),
+    newStatus: '',
+    notes: 'Update Mode remove item; route=' + loc
+  }]);
+
+  sheet.deleteRow(rowNum);
+
+  return {
+    success: true,
+    removedRow: rowNum,
+    rows: getInventoryRowsForLocation_(room, loc),
     timestamp: new Date().toISOString()
   };
 }
@@ -1206,6 +1400,106 @@ function rowMatchesRoomLoc_(rowValues, map, roomNeedle, locNeedle) {
   return false;
 }
 
+function findLocationContextRow_(values, map, room, loc) {
+  const roomNeedle = cleanString_(room).toLowerCase();
+  const locNeedle = cleanString_(loc).toLowerCase();
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (rowMatchesRoomLoc_(row, map, roomNeedle, locNeedle)) {
+      return { row: row, rowNumber: i + 1 };
+    }
+  }
+  return null;
+}
+
+function countLocationRows_(values, map, room, loc) {
+  const roomNeedle = cleanString_(room).toLowerCase();
+  const locNeedle = cleanString_(loc).toLowerCase();
+  let total = 0;
+  let hasPlaceholder = false;
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (!rowMatchesRoomLoc_(row, map, roomNeedle, locNeedle)) continue;
+    total += 1;
+    if (isPlaceholderRow_(row, map)) hasPlaceholder = true;
+  }
+  return { total: total, hasPlaceholder: hasPlaceholder };
+}
+
+function buildNewInventoryRow_(width, map, contextRow, item) {
+  const row = new Array(width).fill('');
+  const room = cleanString_(contextRow[map.room]);
+  const loc = cleanString_(contextRow[map.location]);
+  const storageId = getOptionalValue_(contextRow, map.storageId);
+  const storageLabel = getOptionalValue_(contextRow, map.storageLabel);
+  const locationCode = getOptionalValue_(contextRow, map.locationCode);
+  const storageType = getOptionalValue_(contextRow, map.storageType);
+  const baseUrl = getWebAppBaseUrl_({ silent: true });
+  const routeLoc = getPreferredRouteLocation_(room, loc, storageId, storageLabel, locationCode);
+
+  row[map.itemId] = item.itemId;
+  row[map.itemName] = item.itemName;
+  row[map.room] = room;
+  row[map.location] = loc;
+  row[map.qty] = item.qty;
+  row[map.category] = item.category;
+  row[map.status] = item.status;
+  setOptionalOutputValue_(row, map.unit, item.unit);
+  setOptionalOutputValue_(row, map.remarks, item.remarks);
+  setOptionalOutputValue_(row, map.locationCode, locationCode);
+  setOptionalOutputValue_(row, map.storageId, storageId);
+  setOptionalOutputValue_(row, map.storageLabel, storageLabel);
+  setOptionalOutputValue_(row, map.storageType, storageType);
+  setOptionalOutputValue_(row, map.isPlaceholder, 'FALSE');
+  setOptionalOutputValue_(row, map.lastUpdated, item.timestamp);
+  setOptionalOutputValue_(row, map.updatedBy, item.actor);
+  if (map.qrLink !== -1 && baseUrl) row[map.qrLink] = buildLocationUrl_(baseUrl, room, routeLoc);
+  return row;
+}
+
+function buildPlaceholderRowFromContext_(width, map, contextRow, actor, timestamp) {
+  const row = new Array(width).fill('');
+  const room = cleanString_(contextRow[map.room]);
+  const loc = cleanString_(contextRow[map.location]);
+  const storageId = getOptionalValue_(contextRow, map.storageId);
+  const storageLabel = getOptionalValue_(contextRow, map.storageLabel);
+  const locationCode = getOptionalValue_(contextRow, map.locationCode);
+  const storageType = getOptionalValue_(contextRow, map.storageType);
+  const baseUrl = getWebAppBaseUrl_({ silent: true });
+  const routeLoc = getPreferredRouteLocation_(room, loc, storageId, storageLabel, locationCode);
+
+  row[map.room] = room;
+  row[map.location] = loc;
+  row[map.qty] = 0;
+  row[map.category] = 'Storage';
+  row[map.status] = 'Good';
+  setOptionalOutputValue_(row, map.remarks, 'Placeholder row for QR/location page');
+  setOptionalOutputValue_(row, map.locationCode, locationCode);
+  setOptionalOutputValue_(row, map.storageId, storageId);
+  setOptionalOutputValue_(row, map.storageLabel, storageLabel);
+  setOptionalOutputValue_(row, map.storageType, storageType);
+  setOptionalOutputValue_(row, map.isPlaceholder, 'TRUE');
+  setOptionalOutputValue_(row, map.lastUpdated, timestamp);
+  setOptionalOutputValue_(row, map.updatedBy, actor);
+  if (map.qrLink !== -1 && baseUrl) row[map.qrLink] = buildLocationUrl_(baseUrl, room, routeLoc);
+  return row;
+}
+
+function setQrImageFormulaForRow_(sheet, map, rowNumber) {
+  if (map.qrImage === -1 || map.qrLink === -1) return;
+  const qrLinkColA1 = columnLetter_(map.qrLink + 1);
+  sheet.getRange(rowNumber, map.qrImage + 1)
+    .setFormula('=IF(' + qrLinkColA1 + rowNumber + '="","",IMAGE("' + CONFIG.QUICKCHART_QR_BASE + '"&ENCODEURL(' + qrLinkColA1 + rowNumber + ')))');
+}
+
+function generateItemId_(room, loc, itemName) {
+  const base = [room, loc, itemName].map(function (part) {
+    return cleanString_(part).toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }).filter(Boolean).join('-');
+  const suffix = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Etc/GMT', 'yyyyMMddHHmmss');
+  return (base || 'ITEM') + '-' + suffix;
+}
+
 function isValidQrLink_(url, room) {
   const value = cleanString_(url);
   if (!value) return false;
@@ -1310,13 +1604,14 @@ function appendAuditEvents_(events) {
 
   const ss = getSpreadsheet_();
   const sheet = getOrCreateSheet_(ss, CONFIG.AUDIT_LOG_SHEET_NAME);
-  const headers = [
+  const desiredHeaders = [
     'Timestamp',
     'User',
     'Action',
     'Room',
     'Storage ID',
     'Specific Location',
+    'Route / Location Code',
     'Item ID',
     'Item Name',
     'Old Qty',
@@ -1327,28 +1622,47 @@ function appendAuditEvents_(events) {
   ];
 
   if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, desiredHeaders.length).setValues([desiredHeaders]);
     sheet.setFrozenRows(1);
+  } else {
+    const existingHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(cleanString_);
+    const normalizedExisting = existingHeaders.map(normalizeHeader_);
+    desiredHeaders.forEach(function (header) {
+      if (normalizedExisting.indexOf(normalizeHeader_(header)) === -1) {
+        sheet.getRange(1, sheet.getLastColumn() + 1).setValue(header);
+        normalizedExisting.push(normalizeHeader_(header));
+      }
+    });
   }
 
-  const rows = safeEvents.map(function (event) {
-    return [
-      event.timestamp,
-      event.user,
-      event.action,
-      event.room,
-      event.storageId,
-      event.location,
-      event.itemId,
-      event.itemName,
-      event.oldQty,
-      event.newQty,
-      event.oldStatus,
-      event.newStatus,
-      event.notes
-    ];
+  const actualHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(cleanString_);
+  const headerIndex = {};
+  actualHeaders.forEach(function (header, index) {
+    headerIndex[normalizeHeader_(header)] = index;
   });
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
+  const setValue = function (row, header, value) {
+    const idx = headerIndex[normalizeHeader_(header)];
+    if (idx !== undefined) row[idx] = value;
+  };
+  const rows = safeEvents.map(function (event) {
+    const row = new Array(actualHeaders.length).fill('');
+    setValue(row, 'Timestamp', event.timestamp);
+    setValue(row, 'User', event.user);
+    setValue(row, 'Action', event.action);
+    setValue(row, 'Room', event.room);
+    setValue(row, 'Storage ID', event.storageId);
+    setValue(row, 'Specific Location', event.location);
+    setValue(row, 'Route / Location Code', event.routeLoc || event.locationCode || '');
+    setValue(row, 'Item ID', event.itemId);
+    setValue(row, 'Item Name', event.itemName);
+    setValue(row, 'Old Qty', event.oldQty);
+    setValue(row, 'New Qty', event.newQty);
+    setValue(row, 'Old Status', event.oldStatus);
+    setValue(row, 'New Status', event.newStatus);
+    setValue(row, 'Notes', event.notes);
+    return row;
+  });
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, actualHeaders.length).setValues(rows);
   return { success: true, appendedRows: rows.length };
 }
 
@@ -1377,6 +1691,7 @@ function readRecentAuditEvents_(limit) {
       room: index('room'),
       storageId: index(['storage id', 'storage']),
       location: index(['specific location', 'location']),
+      routeLoc: index(['route / location code', 'location code', 'route']),
       itemId: index('item id'),
       itemName: index('item name'),
       oldQty: index('old qty'),
@@ -1396,11 +1711,12 @@ function readRecentAuditEvents_(limit) {
         ts: getOptionalValue_(row, map.timestamp),
         user: getOptionalValue_(row, map.user) || 'unknown user',
         action: getOptionalValue_(row, map.action) || 'Update',
-        room: getOptionalValue_(row, map.room),
+      room: getOptionalValue_(row, map.room),
         storage: storage,
         storageId: getOptionalValue_(row, map.storageId),
         location: getOptionalValue_(row, map.location),
-        item: itemName || itemId || '-',
+        routeLoc: getOptionalValue_(row, map.routeLoc),
+      item: itemName || itemId || '-',
         itemId: itemId,
         itemName: itemName,
         oldQty: getOptionalValue_(row, map.oldQty),
@@ -1468,38 +1784,55 @@ function buildStorageMasterSheet() {
   const ss = getSpreadsheet_();
   const sheet = getOrCreateSheet_(ss, CONFIG.STORAGE_MASTER_SHEET_NAME);
   const headers = [
-    'Storage ID',
     'Room',
-    'Storage Label',
-    'Specific Location',
     'Location Code',
+    'Specific Location',
+    'Storage ID',
+    'Storage Label',
     'Storage Type',
+    'Open View',
+    'Open Update',
     'QR Link',
     'QR Image',
-    'Status',
-    'Notes'
+    'Item Count',
+    'Chemical Count',
+    'Attention Count',
+    'Placeholder Only',
+    'Status / Notes'
   ];
   const rows = locations.map(function (entry, index) {
     const stats = statsByKey[entry.canonicalKey] || {};
-    const qrLink = baseUrl ? buildLocationUrl_(baseUrl, entry.room, entry.routeLoc) : '';
+    const viewUrl = baseUrl ? buildLocationUrl_(baseUrl, entry.room, entry.routeLoc) : '';
+    const updateUrl = viewUrl ? viewUrl + '&mode=tech' : '';
     const status = (stats.attentionCount || 0) > 0 ? 'Needs Attention' : 'Good';
     const storageType = entry.storageType || inferStorageType_(entry, stats);
+    const itemCount = stats.itemCount || 0;
+    const chemicalCount = stats.chemicalCount || 0;
+    const attentionCount = stats.attentionCount || 0;
+    const placeholderOnly = itemCount === 0;
     const notes = [
-      (stats.itemCount || 0) + ' item row(s)',
-      (stats.chemicalCount || 0) + ' chemical row(s)',
-      (stats.attentionCount || 0) + ' attention row(s)'
-    ].join('; ');
+      status,
+      itemCount + ' item row(s)',
+      chemicalCount + ' chemical row(s)',
+      attentionCount + ' attention row(s)',
+      placeholderOnly ? 'placeholder-only route' : ''
+    ].filter(Boolean).join('; ');
     const rowNumber = index + 2;
     return [
-      entry.storageId,
       entry.room,
-      entry.storageLabel || entry.displayLoc || entry.loc,
-      entry.loc,
       entry.locationCode,
+      entry.loc,
+      entry.storageId,
+      entry.storageLabel || entry.displayLoc || entry.loc,
       storageType,
-      qrLink,
-      qrLink ? '=IMAGE("' + CONFIG.QUICKCHART_QR_BASE + '"&ENCODEURL(G' + rowNumber + '))' : '',
-      status,
+      viewUrl ? buildSpreadsheetHyperlinkFormula_(viewUrl, 'Open View') : '',
+      updateUrl ? buildSpreadsheetHyperlinkFormula_(updateUrl, 'Open Update') : '',
+      viewUrl,
+      viewUrl ? '=IMAGE("' + CONFIG.QUICKCHART_QR_BASE + '"&ENCODEURL(I' + rowNumber + '))' : '',
+      itemCount,
+      chemicalCount,
+      attentionCount,
+      placeholderOnly ? 'Yes' : 'No',
       notes
     ];
   });
@@ -1508,23 +1841,41 @@ function buildStorageMasterSheet() {
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   if (rows.length) {
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-    const formulas = rows.map(function (row) { return [row[7]]; });
-    sheet.getRange(2, 8, rows.length, 1).setFormulas(formulas);
+    sheet.getRange(2, 7, rows.length, 1).setFormulas(rows.map(function (row) { return [row[6]]; }));
+    sheet.getRange(2, 8, rows.length, 1).setFormulas(rows.map(function (row) { return [row[7]]; }));
+    sheet.getRange(2, 10, rows.length, 1).setFormulas(rows.map(function (row) { return [row[9]]; }));
   }
   sheet.setFrozenRows(1);
   sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0f2fe');
-  sheet.setColumnWidth(1, 140);
-  sheet.setColumnWidth(2, 90);
-  sheet.setColumnWidth(3, 240);
-  sheet.setColumnWidth(4, 220);
-  sheet.setColumnWidth(5, 140);
+  try {
+    const filter = sheet.getFilter();
+    if (filter) filter.remove();
+    sheet.getRange(1, 1, Math.max(rows.length + 1, 2), headers.length).createFilter();
+  } catch (err) {
+    // Filters are a convenience; generation should not fail if the sheet cannot create one.
+  }
+  sheet.setColumnWidth(1, 90);
+  sheet.setColumnWidth(2, 150);
+  sheet.setColumnWidth(3, 220);
+  sheet.setColumnWidth(4, 140);
+  sheet.setColumnWidth(5, 240);
   sheet.setColumnWidth(6, 150);
-  sheet.setColumnWidth(7, 520);
+  sheet.setColumnWidth(7, 120);
   sheet.setColumnWidth(8, 120);
-  sheet.setColumnWidth(9, 130);
-  sheet.setColumnWidth(10, 280);
+  sheet.setColumnWidth(9, 520);
+  sheet.setColumnWidth(10, 120);
+  sheet.setColumnWidth(15, 340);
 
   return { success: true, sheetName: sheet.getName(), storageCount: rows.length };
+}
+
+function buildSpreadsheetHyperlinkFormula_(url, label) {
+  if (!url) return '';
+  return '=HYPERLINK("' + escapeSpreadsheetFormulaString_(url) + '","' + escapeSpreadsheetFormulaString_(label || url) + '")';
+}
+
+function escapeSpreadsheetFormulaString_(value) {
+  return cleanString_(value).replace(/"/g, '""');
 }
 
 function getLocationStatsByKey_() {
@@ -1583,7 +1934,19 @@ function buildQrLabelSheet() {
   const statsByKey = getLocationStatsByKey_();
   const ss = getSpreadsheet_();
   const sheet = getOrCreateSheet_(ss, CONFIG.QR_LABEL_SHEET_NAME);
-  const headers = ['Room', 'Specific Location', 'Storage ID', 'Storage Label', 'Location Code', 'View URL', 'Update URL', 'QR Image Formula', 'Print Label Text'];
+  const headers = [
+    'Room',
+    'Specific Location',
+    'Storage ID',
+    'Storage Label',
+    'Location Code',
+    'View URL',
+    'Update URL',
+    'QR Image Formula',
+    'Print Label Text',
+    'Brother QL-1110 Label Size',
+    'Printer Notes'
+  ];
   const output = locations.map(function (entry) {
     const stats = statsByKey[entry.canonicalKey] || {};
     const displayName = entry.displayLoc || entry.loc;
@@ -1597,6 +1960,10 @@ function buildQrLabelSheet() {
       'Scan to view inventory'
     ];
     if (stats.chemicalCount) labelLines.push('HAZARD STORAGE - CHECK SAFETY FIRST');
+    const brotherSize = stats.chemicalCount ? '102mm x 70mm safety' : '102mm x 50mm or 90mm x 29mm';
+    const printerNotes = stats.chemicalCount
+      ? 'Use Brother 102mm safety preset; 90mm x 29mm is not recommended for hazard labels; print sample first.'
+      : 'Use Brother 102mm compact/safety preset, or 90mm x 29mm slim preset for short labels; print sample first; scale 100%.';
     return [
       entry.room,
       entry.loc,
@@ -1606,7 +1973,9 @@ function buildQrLabelSheet() {
       viewUrl,
       techUrl,
       '',
-      labelLines.join('\n')
+      labelLines.join('\n'),
+      brotherSize,
+      printerNotes
     ];
   });
 
@@ -1618,7 +1987,7 @@ function buildQrLabelSheet() {
       const row = i + 2;
       sheet.getRange(row, 8).setFormula('=IF(F' + row + '="","",IMAGE("' + CONFIG.QUICKCHART_QR_BASE + '"&ENCODEURL(F' + row + ')))');
     }
-    sheet.getRange(2, 9, output.length, 1).setWrap(true);
+    sheet.getRange(2, 9, output.length, 3).setWrap(true);
   }
 
   sheet.setFrozenRows(1);
@@ -1632,6 +2001,8 @@ function buildQrLabelSheet() {
   sheet.setColumnWidth(7, 520);
   sheet.setColumnWidth(8, 120);
   sheet.setColumnWidth(9, 260);
+  sheet.setColumnWidth(10, 160);
+  sheet.setColumnWidth(11, 320);
 
   return { success: true, sheetName: sheet.getName(), labelCount: output.length };
 }
@@ -1687,6 +2058,336 @@ function createReadinessReport() {
     warningCount: report.warningCount,
     errorCount: report.errorCount
   };
+}
+
+function createWarningTriageBoard() {
+  const ss = getSpreadsheet_();
+  let reportSheet = ss.getSheetByName(CONFIG.READINESS_REPORT_SHEET_NAME);
+  if (!reportSheet) {
+    createReadinessReport();
+    reportSheet = ss.getSheetByName(CONFIG.READINESS_REPORT_SHEET_NAME);
+  }
+  if (!reportSheet) throw new Error('Inventory_Readiness_Report could not be found or created.');
+
+  const values = reportSheet.getDataRange().getValues();
+  const headerRowIndex = findReviewHeaderRow_(values, ['severity', 'row', 'issue', 'detail']);
+  if (headerRowIndex === -1) {
+    throw new Error('Could not find the readiness issue table. Run Create Readiness Report first.');
+  }
+
+  const normalizedHeaders = values[headerRowIndex].map(normalizeHeader_);
+  const output = [];
+  for (let i = headerRowIndex + 1; i < values.length; i++) {
+    const source = rowByHeaders_(values[i], normalizedHeaders);
+    const severity = cleanString_(source.severity);
+    if (!severity || ['warn', 'warning', 'error', 'critical'].indexOf(severity.toLowerCase()) === -1) continue;
+
+    const issueType = cleanString_(source.issue);
+    const triage = triageForIssue_(issueType);
+    output.push([
+      'W-' + padNumber_(output.length + 1, 3),
+      i + 1,
+      cleanString_(source.room),
+      cleanString_(source.location),
+      cleanString_(source.itemId),
+      cleanString_(source.itemName),
+      issueType,
+      cleanString_(source.detail),
+      severity.toUpperCase() === 'ERROR' ? 'Critical' : triage.severity,
+      triage.owner,
+      triage.decision,
+      triage.action,
+      '',
+      triage.status,
+      ''
+    ]);
+  }
+
+  const sheet = getOrCreateSheet_(ss, CONFIG.WARNING_TRIAGE_SHEET_NAME);
+  const headers = [
+    'Warning ID',
+    'Source Report Row',
+    'Room',
+    'Location Code',
+    'Item ID',
+    'Item Name',
+    'Warning Type',
+    'Current Message',
+    'Severity',
+    'Owner',
+    'Decision',
+    'Action Needed',
+    'Due / Review Date',
+    'Status',
+    'Notes'
+  ];
+
+  sheet.clear();
+  sheet.getRange(1, 1).setValue('Readiness Warning Triage');
+  sheet.getRange(2, 1).setValue('Use this board to decide which warnings block the pilot, which can be deferred, and who owns the follow-up.');
+  sheet.getRange(3, 1).setValue('Keep critical errors at zero. QR sample printing may proceed only when warnings are assigned, accepted, or scheduled.');
+  sheet.getRange(5, 1, 1, headers.length).setValues([headers]);
+  if (output.length) {
+    sheet.getRange(6, 1, output.length, headers.length).setValues(output);
+  }
+
+  sheet.setFrozenRows(5);
+  sheet.getRange(1, 1, 1, headers.length).merge().setFontSize(14).setFontWeight('bold').setBackground('#fef3c7');
+  sheet.getRange(2, 1, 2, headers.length).mergeAcross().setWrap(true).setBackground('#fff7ed');
+  sheet.getRange(5, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0f2fe');
+  sheet.getRange(6, 9, Math.max(1, output.length), 1).setDataValidation(listValidation_(['High', 'Medium', 'Low', 'Critical']));
+  sheet.getRange(6, 10, Math.max(1, output.length), 1).setDataValidation(listValidation_(['Technician', 'HoD', 'Teacher', 'Admin', 'Data Owner']));
+  sheet.getRange(6, 11, Math.max(1, output.length), 1).setDataValidation(listValidation_(['Fix Now', 'Defer to Pilot', 'Needs HoD Decision', 'Needs Technician Check', 'Accepted Risk', 'Resolved']));
+  sheet.getRange(6, 14, Math.max(1, output.length), 1).setDataValidation(listValidation_(['Fix Now', 'Defer to Pilot', 'Needs HoD Decision', 'Needs Technician Check', 'Accepted Risk', 'Resolved']));
+  sheet.setColumnWidths(1, headers.length, 140);
+  sheet.setColumnWidth(8, 420);
+  sheet.setColumnWidth(12, 360);
+  sheet.setColumnWidth(15, 280);
+  sheet.getRange(1, 1, Math.max(6, output.length + 5), headers.length).setWrap(true);
+
+  return { success: true, sheetName: sheet.getName(), warningCount: output.length };
+}
+
+function prepare419AUnmatchedReviewSheet() {
+  const ss = getSpreadsheet_();
+  const sheet = getOrCreateSheet_(ss, CONFIG.UNMATCHED_REVIEW_SHEET_NAME);
+  const existing = sheet.getDataRange().getValues();
+  const headerRowIndex = findReviewHeaderRow_(existing, ['old item name']);
+  const existingHeaders = headerRowIndex === -1 ? [] : existing[headerRowIndex].map(normalizeHeader_);
+  const rows = [];
+
+  if (headerRowIndex !== -1) {
+    for (let i = headerRowIndex + 1; i < existing.length; i++) {
+      const source = rowByHeaders_(existing[i], existingHeaders);
+      const oldItemName = cleanString_(source.oldItemName || source.itemName);
+      if (!oldItemName) continue;
+      const decision = cleanString_(source.reviewerDecision);
+      rows.push([
+        oldItemName,
+        cleanString_(source.oldRoom || source.room),
+        cleanString_(source.oldLocation || source.location),
+        cleanString_(source.oldCategory || source.category),
+        cleanString_(source.oldQty || source.qty),
+        cleanString_(source.possibleMatchSuggestedLocationCode || source.suggestedLocationCode),
+        cleanString_(source.confidence) || 'Low',
+        cleanString_(source.reasonUnmatched) || 'Not matched automatically to authoritative 419A Location Code list.',
+        decision && decision !== 'Pending Review' ? decision : 'Keep for Later Review',
+        cleanString_(source.finalLocationCode),
+        cleanString_(source.newStorageLabel),
+        cleanString_(source.action) || 'Needs Physical Check',
+        cleanString_(source.notes)
+      ]);
+    }
+  }
+
+  const headers = [
+    'Old Item Name',
+    'Old Room',
+    'Old Location',
+    'Old Category',
+    'Old Qty',
+    'Possible Match / Suggested Location Code',
+    'Confidence',
+    'Reason Unmatched',
+    'Reviewer Decision',
+    'Final Location Code',
+    'New Storage Label',
+    'Action',
+    'Notes'
+  ];
+
+  sheet.clear();
+  sheet.getRange(1, 1).setValue('419A Unmatched Review');
+  sheet.getRange(2, 1).setValue('Physically check the item before assigning it to a Location Code. Do not append rows to Inventory until Final Location Code is confirmed.');
+  sheet.getRange(3, 1).setValue('Location Code is the operational 419A route identity. Only reviewed rows should be imported or appended.');
+  sheet.getRange(5, 1, 1, headers.length).setValues([headers]);
+  if (rows.length) sheet.getRange(6, 1, rows.length, headers.length).setValues(rows);
+
+  sheet.setFrozenRows(5);
+  sheet.getRange(1, 1, 1, headers.length).merge().setFontSize(14).setFontWeight('bold').setBackground('#fef3c7');
+  sheet.getRange(2, 1, 2, headers.length).mergeAcross().setWrap(true).setBackground('#fff7ed');
+  sheet.getRange(5, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0f2fe');
+  sheet.getRange(6, 7, Math.max(1, rows.length), 1).setDataValidation(listValidation_(['High', 'Medium', 'Low']));
+  sheet.getRange(6, 9, Math.max(1, rows.length), 1).setDataValidation(listValidation_(['Assign to Location Code', 'Archive / Remove', 'Duplicate of Existing', 'Needs Physical Check', 'Not 419A', 'Keep for Later Review']));
+  sheet.getRange(6, 12, Math.max(1, rows.length), 1).setDataValidation(listValidation_(['Needs Physical Check', 'Append to Inventory', 'Archive / Remove', 'Do Not Import', 'Merge with Existing']));
+  sheet.setColumnWidths(1, headers.length, 160);
+  sheet.setColumnWidth(1, 260);
+  sheet.setColumnWidth(6, 220);
+  sheet.setColumnWidth(8, 320);
+  sheet.setColumnWidth(13, 300);
+  sheet.getRange(1, 1, Math.max(6, rows.length + 5), headers.length).setWrap(true);
+
+  return { success: true, sheetName: sheet.getName(), reviewRows: rows.length };
+}
+
+function createPilotTestLog() {
+  const ss = getSpreadsheet_();
+  const sheet = getOrCreateSheet_(ss, CONFIG.PILOT_TEST_LOG_SHEET_NAME);
+  const samples = pilotSampleRows_();
+  const headers = [
+    'Timestamp',
+    'Tester',
+    'Role',
+    'Storage Code',
+    'Test Type',
+    'Expected Result',
+    'Actual Result',
+    'Pass/Fail',
+    'Issue',
+    'Follow-up Owner',
+    'Notes'
+  ];
+  const rows = [];
+  samples.forEach(function (sample) {
+    rows.push(['', '', 'Student/Staff', sample.code, 'View scan', 'QR opens the correct View Mode page for ' + sample.code + '.', '', '', '', '', sample.note]);
+    rows.push(['', '', 'Technician', sample.code, 'Update save', 'Authorised staff can enter Update Mode, save a safe change, and restore it.', '', '', '', '', sample.note]);
+    rows.push(['', '', 'Admin/HoD', sample.code, 'QR label check', 'Printed label is readable and scans to View Mode by default.', '', '', '', '', sample.note]);
+  });
+
+  sheet.clear();
+  sheet.getRange(1, 1).setValue('419A Controlled Pilot Test Log');
+  sheet.getRange(2, 1).setValue('Pilot scope: 419A-CAB-01, 419A-FCU-01, and one additional non-chemical 419A storage. Record actual results before wider rollout.');
+  sheet.getRange(3, 1).setValue('Do not run full QR printing until sample labels scan correctly and readiness warnings are accepted, assigned, or scheduled.');
+  sheet.getRange(5, 1, 1, headers.length).setValues([headers]);
+  if (rows.length) sheet.getRange(6, 1, rows.length, headers.length).setValues(rows);
+
+  sheet.setFrozenRows(5);
+  sheet.getRange(1, 1, 1, headers.length).merge().setFontSize(14).setFontWeight('bold').setBackground('#dcfce7');
+  sheet.getRange(2, 1, 2, headers.length).mergeAcross().setWrap(true).setBackground('#f0fdf4');
+  sheet.getRange(5, 1, 1, headers.length).setFontWeight('bold').setBackground('#e0f2fe');
+  sheet.getRange(6, 3, Math.max(1, rows.length), 1).setDataValidation(listValidation_(['Student/Staff', 'Technician', 'Teacher', 'Admin/HoD']));
+  sheet.getRange(6, 5, Math.max(1, rows.length), 1).setDataValidation(listValidation_(['View scan', 'Update save', 'Audit log', 'QR label check', 'Hazard warning check', 'Restore test value']));
+  sheet.getRange(6, 8, Math.max(1, rows.length), 1).setDataValidation(listValidation_(['Pass', 'Fail', 'Partial', 'Not Tested']));
+  sheet.setColumnWidths(1, headers.length, 150);
+  sheet.setColumnWidth(6, 360);
+  sheet.setColumnWidth(7, 300);
+  sheet.setColumnWidth(9, 260);
+  sheet.setColumnWidth(11, 280);
+  sheet.getRange(1, 1, Math.max(6, rows.length + 5), headers.length).setWrap(true);
+
+  return { success: true, sheetName: sheet.getName(), templateRows: rows.length };
+}
+
+function triageForIssue_(issueType) {
+  const issue = cleanString_(issueType).toUpperCase();
+  if (issue.indexOf('SDS') !== -1) {
+    return {
+      severity: 'High',
+      owner: 'Technician',
+      decision: 'Needs Technician Check',
+      status: 'Needs Technician Check',
+      action: 'Add SDS Link for chemical item or record accepted pilot risk with HoD approval.'
+    };
+  }
+  if (issue.indexOf('SAFETY') !== -1 || issue.indexOf('CHEMICAL') !== -1) {
+    return {
+      severity: 'High',
+      owner: 'Technician',
+      decision: 'Fix Now',
+      status: 'Fix Now',
+      action: 'Add Safety Note for chemical storage/item before physical rollout.'
+    };
+  }
+  if (issue.indexOf('REORDER') !== -1 || issue.indexOf('LOW_STOCK') !== -1) {
+    return {
+      severity: 'Medium',
+      owner: 'HoD',
+      decision: 'Needs HoD Decision',
+      status: 'Needs HoD Decision',
+      action: 'Set Reorder Level or defer purchasing metadata until after pilot.'
+    };
+  }
+  if (issue.indexOf('MAINTENANCE') !== -1) {
+    return {
+      severity: 'Medium',
+      owner: 'Technician',
+      decision: 'Needs Technician Check',
+      status: 'Needs Technician Check',
+      action: 'Add Maintenance Due date or maintenance detail in Remarks.'
+    };
+  }
+  if (issue.indexOf('STORAGE') !== -1 || issue.indexOf('LOCATION') !== -1) {
+    return {
+      severity: 'Medium',
+      owner: 'Data Owner',
+      decision: 'Needs Technician Check',
+      status: 'Needs Technician Check',
+      action: 'Confirm Location Code / storage identity against the physical room.'
+    };
+  }
+  return {
+    severity: 'Low',
+    owner: 'Data Owner',
+    decision: 'Defer to Pilot',
+    status: 'Defer to Pilot',
+    action: 'Review during pilot data cleanup.'
+  };
+}
+
+function pilotSampleRows_() {
+  const samples = [
+    { code: '419A-CAB-01', note: 'Chemical storage sample; check hazard wording and View Mode default.' },
+    { code: '419A-FCU-01', note: 'Normal storage sample; already used for safe Update Mode/Audit_Log test.' }
+  ];
+  const fallback = findAdditionalPilotStorage_();
+  if (fallback) samples.push({ code: fallback, note: 'Additional non-chemical 419A storage sample.' });
+  return samples;
+}
+
+function findAdditionalPilotStorage_() {
+  const locations = getAllLocations_();
+  const statsByKey = getLocationStatsByKey_();
+  for (let i = 0; i < locations.length; i++) {
+    const entry = locations[i];
+    const code = entry.routeLoc || entry.locationCode || entry.storageId || entry.loc;
+    if (entry.room !== CONFIG.ROLLOUT_ROOM) continue;
+    if (code === '419A-CAB-01' || code === '419A-FCU-01') continue;
+    const stats = statsByKey[entry.canonicalKey] || {};
+    if ((stats.chemicalCount || 0) > 0) continue;
+    return code;
+  }
+  return '';
+}
+
+function findReviewHeaderRow_(values, requiredHeaders) {
+  for (let i = 0; i < values.length; i++) {
+    const normalized = values[i].map(normalizeHeader_);
+    const hasAll = requiredHeaders.every(function (header) {
+      return normalized.indexOf(normalizeHeader_(header)) !== -1;
+    });
+    if (hasAll) return i;
+  }
+  return -1;
+}
+
+function rowByHeaders_(row, normalizedHeaders) {
+  const output = {};
+  for (let i = 0; i < normalizedHeaders.length; i++) {
+    if (!normalizedHeaders[i]) continue;
+    output[normalizedHeaders[i]] = row[i];
+    output[camelHeaderKey_(normalizedHeaders[i])] = row[i];
+  }
+  return output;
+}
+
+function camelHeaderKey_(header) {
+  const parts = String(header || '').split(/[^a-z0-9]+/).filter(Boolean);
+  if (!parts.length) return '';
+  return parts[0] + parts.slice(1).map(function (part) {
+    return part.charAt(0).toUpperCase() + part.slice(1);
+  }).join('');
+}
+
+function listValidation_(items) {
+  return SpreadsheetApp.newDataValidation()
+    .requireValueInList(items, true)
+    .setAllowInvalid(false)
+    .build();
+}
+
+function padNumber_(value, width) {
+  const text = String(value);
+  return text.length >= width ? text : new Array(width - text.length + 1).join('0') + text;
 }
 
 function get419AReadinessSummary(room) {

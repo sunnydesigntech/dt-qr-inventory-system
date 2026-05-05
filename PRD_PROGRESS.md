@@ -2,7 +2,7 @@
 
 Version: V2.5 Progress PRD and Workshop Workflow Plan
 Date: 2026-05-01
-Status: Template-based Apps Script runtime deployed through `@12`; live 419A Location Code routing, QR generation, Storage_Master, QR_Labels, and readiness outputs have been regenerated from the dashboard Sheet. Full physical QR rollout remains gated by warning review, manual reassignment of unmatched old rows, and sample scans.
+Status: Template-based Apps Script runtime deployed through `@28`; live 419A Location Code routing, QR generation, clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, mobile scanner/search-first UX, explicit phone camera permission start flow, stronger mobile readability tokens, Figma-inspired dashboard hierarchy polish, Brother QL-1110 label print presets including single-label printing and a safer 90mm x 29mm slim-label printable area, and readiness outputs have been regenerated from the dashboard Sheet workflow. Full physical QR rollout remains gated by warning review, manual reassignment of unmatched old rows, and sample scans.
 
 ## 1. Executive Summary
 
@@ -19,13 +19,16 @@ The runtime app now uses Apps Script `HtmlService` templates so the approved pro
 
 Repository support files are allowed and now exist:
 
-- `.clasp.json`
 - `.claspignore`
 - `appsscript.json`
 - `README.md`
 - `LICENSE`
 - `PRD_PROGRESS.md`
-- `prototype/`
+
+Public repository note:
+
+- `.clasp.json`, downloaded workbooks, generated database-match outputs, prototype screenshots, and local UI export artifacts are intentionally ignored or removed from Git because they can contain project IDs, school-internal data, or local machine context.
+- Public source uses placeholders for deployment IDs, spreadsheet IDs, and source workbook IDs.
 
 ## 2. Current Release State
 
@@ -33,13 +36,13 @@ Repository support files are allowed and now exist:
 
 Current documented production deployment:
 
-- Deployment version: `@12`
-- Deployment ID: `AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ`
-- Web app URL: `https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec`
+- Deployment version: `@28`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Web app URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
 
 ### Local Repo State
 
-The local repo contains the template-based runtime, UI demo operations screens, documentation, matched-workbook updates, and 419A Location Code routing polish. The standalone web runtime was pushed and deployed as Apps Script version `@12`.
+The local repo contains the template-based runtime, documentation, 419A Location Code routing polish, Figma-approved dashboard UI refinements, clickable Storage_Master generation, real-use Add/Remove item workflow hardening, mobile scanner/search-first UX, explicit phone camera permission start flow, stronger phone-readable typography polish, Figma-inspired dashboard command/metric hierarchy, and Brother QL-1110 / QL-1110NWB print presets for A4, fitted 90mm x 29mm, 102mm x 50mm, and 102mm x 70mm safety labels. Private workbook data and generated database-match outputs are intentionally excluded from Git. The standalone web runtime was pushed and deployed as Apps Script version `@28`.
 
 Important note:
 
@@ -432,7 +435,7 @@ File:
 Converted Google Sheet found:
 
 - Name: `dt_inventory_419A_authoritative_storage_ids`
-- ID: `1Oz6iojJbRXG1b7KVV-t721Gcc_fqCA8erOcKJvZmGlM`
+- ID: `<SOURCE_STORAGE_MASTER_SHEET_ID>`
 
 Important tabs:
 
@@ -456,7 +459,7 @@ File:
 Converted Google Sheet found:
 
 - Name: `DT items in room 419 V++`
-- ID: `1-3frb9txIDaSVzWJFoMc8hiKoWi2l3-fwkvWocNQQgM`
+- ID: `<SOURCE_LEGACY_INVENTORY_SHEET_ID>`
 
 Important tabs:
 
@@ -478,7 +481,7 @@ Known extracted facts:
 Likely live dashboard database found:
 
 - Name: `D&T QR Inventory Database - 2026-03-25 13:30:33`
-- ID: `1GqK9XsPdTiPREhVXLeexreZ7cCfZJJ7FNueotpSZpqM`
+- ID: `<YOUR_SPREADSHEET_ID>`
 
 Expected target tab:
 
@@ -606,6 +609,8 @@ The QR label sheet should be verified to include:
 - Update URL
 - QR image formula
 - print label text
+- Brother QL-1110 label size guidance
+- printer notes for 102mm compact/safety thermal presets
 
 If the current local implementation does not include all fields exactly, adjust before release.
 

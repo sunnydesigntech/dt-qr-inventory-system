@@ -1,11 +1,11 @@
 # D&T QR Inventory Rollout Checklist
 
-This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@12`; version `@11` is retained in Apps Script version history as the rollback fallback.
+This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@28`; version `@27` is retained in Apps Script version history as the previous 90x29 label fit fallback.
 
 Production URL:
 
 ```text
-https://script.google.com/a/macros/vsa.edu.hk/s/AKfycbyB3esZWpSm0WDydyoJMHw3EtXkag0Qg0WpClSgBcxzaAwUcQk8m-MGJw-uCyfKcptFzQ/exec
+https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec
 ```
 
 ## Student / Staff Workflow
@@ -35,6 +35,8 @@ Students and teaching staff should use View Mode only. They should not use Updat
 7. Press Save updates.
 8. Confirm the green saved message appears and the unsaved count clears.
 9. If save fails, check the validation message, correct the row, and retry.
+10. Use Add item only for items physically confirmed in the current storage.
+11. Use Remove only after checking the confirmation details: item name, item ID, storage route, and current quantity.
 
 Placeholder storage rows exist only to make empty QR/location pages routable. Do not treat placeholder rows as stock items.
 
@@ -71,7 +73,7 @@ Source Excel workbooks are not read by the deployed app at runtime. They must be
 
 For Room 419A, the latest operational storage numbering comes from the `Location Code` column in `419A_Storage_Master`. QR labels and app routes should use those codes, for example `419A-FCU-01` or `419A-CAB-01`. Workbook `Storage ID` values are preserved as metadata, but the live 419A stocktake workflow should use Location Code as the code printed on storage labels.
 
-`Storage_Master` is generated from `Inventory` and is the operational storage map for rollout checks. `Audit_Log` is append-only and records Update Mode quantity/status changes when the optional audit columns and save flow are active.
+`Storage_Master` is generated from `Inventory` and is the operational storage map for rollout checks. It includes clickable `Open View` and `Open Update` links for each storage route. `Audit_Log` is append-only and records Update Mode quantity/status changes, add-item actions, and remove-item actions when the save flow is active.
 
 Do not directly edit:
 
@@ -94,6 +96,15 @@ Do not directly edit:
 10. Confirm each scan opens View Mode for the correct storage.
 
 The system has one Apps Script web app URL. QR labels do not point to separate apps or separate pages; they point to the same `/exec` URL with route parameters such as `?room=419A&loc=419A-CHEM-001`. The QR code should scan to View Mode by default. Update Mode is available from the in-app Update button for authorised stock checks.
+
+Brother QL-1110 / QL-1110NWB printing is supported through browser print presets on the QR Labels page:
+
+- `/exec?admin=labels&printer=brother-ql1110`
+- `Brother 90x29` for slim short-label printing.
+- `Brother 102x50` for compact normal-storage labels.
+- `Brother 102x70 safety` for mixed/chemical labels with hazard text.
+
+Each label preview includes `Print this label`, and the QR Labels page includes a `Choose one label to print` selector for single-label replacement/sample printing. Use the Brother driver or AirPrint print dialog, choose the matching continuous roll size, set margins to `None`, set scale to 100%, disable browser headers/footers, and print a small sample before any batch. Chrome default margins can crop the QR code on 90mm x 29mm labels.
 
 ## Go-Live Gate
 

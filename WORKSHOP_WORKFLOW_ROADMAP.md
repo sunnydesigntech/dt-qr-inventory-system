@@ -1,7 +1,7 @@
 # D&T QR Inventory System - Workshop Workflow Roadmap
 
 Date: 2026-05-01
-Status: Active roadmap for turning the QR inventory app into the D&T workshop operating system. The standalone web app is deployed at `@12`; Room 419A now uses the authoritative `Location Code` list for QR/storage routes, with live Storage_Master, QR_Labels, and readiness outputs regenerated from the dashboard Sheet.
+Status: Active roadmap for turning the QR inventory app into the D&T workshop operating system. The standalone web app is deployed at `@28`; Room 419A uses the authoritative `Location Code` list for QR/storage routes, with live clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, readiness outputs, Figma-inspired dashboard hierarchy polish, phone-fit layout refinements, stronger phone-readable typography, an in-app QR scanner with explicit phone camera permission start plus manual route fallback, and Brother QL-1110 / QL-1110NWB print presets including single-label and safer 90mm x 29mm slim label support.
 
 ## Target Operating Model
 
@@ -38,7 +38,9 @@ The app uses one Apps Script deployment URL. Storage, admin, and update views ar
    - Open Update Mode from the storage page.
    - Search/filter items by text, status, and category.
    - Update quantity and status.
-   - Save writes back to the live Sheet, updates `Last Updated` / `Updated By` where those columns exist, and appends `Audit_Log` rows for actual quantity/status changes.
+   - Add items physically confirmed in the current storage.
+   - Remove items only after confirmation.
+   - Save/add/remove writes back to the live Sheet, updates `Last Updated` / `Updated By` where those columns exist, and appends `Audit_Log` rows for actual changes.
 
 6. Admin and HoD workflow
    - Use diagnostics to confirm configuration and columns.
@@ -61,8 +63,9 @@ Implemented:
 - Admin diagnostics, readiness, and QR labels web routes.
 - Google Sheet menu support for QR links/images, readiness, imports, and 419A summary.
 - Extended operations columns.
-- Generated `Storage_Master`.
-- Save audit logging to `Audit_Log`.
+- Generated clickable `Storage_Master` with View/Update links and counts.
+- Save/add/remove audit logging to `Audit_Log`.
+- Update Mode Add item and Remove item workflow with placeholder-route preservation.
 - Chemical safety note, reorder-level, and maintenance-detail readiness checks.
 
 Partially implemented:
@@ -74,7 +77,7 @@ Partially implemented:
 
 Not yet implemented:
 
-- Add/edit/archive item from the web UI.
+- Edit/archive item from the web UI beyond the current add/remove workflow.
 - PIN or role gate for Update Mode.
 - Dedicated HoD purchasing/budget dashboard.
 - Email alerts.
