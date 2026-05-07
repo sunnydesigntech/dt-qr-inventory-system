@@ -2,7 +2,7 @@
 
 Version: V2.5 Progress PRD and Workshop Workflow Plan
 Date: 2026-05-01
-Status: Template-based Apps Script runtime deployed through `@39`; live 419A Location Code routing, QR generation, clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, mobile scanner/search-first UX with an external top-level HTTPS scanner page for reliable camera access outside the Apps Script frame, stronger mobile readability tokens, Figma-inspired dashboard hierarchy polish, Brother QL-1110 label print presets including single-label printing and a safer 90mm x 29mm slim-label printable area, and readiness outputs have been regenerated from the dashboard Sheet workflow. Full physical QR rollout remains gated by warning review, manual reassignment of unmatched old rows, and sample scans.
+Status: Template-based Apps Script runtime deployed through `@40`; live 419A Location Code routing, QR generation, clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, mobile scanner/search-first UX with an external top-level HTTPS scanner page for reliable camera access outside the Apps Script frame, stronger mobile readability tokens, Figma-inspired dashboard hierarchy polish, Brother QL-1110 label print presets including single-label printing and a safer 90mm x 29mm slim-label printable area, and readiness outputs have been regenerated from the dashboard Sheet workflow. Full physical QR rollout remains gated by warning review, manual reassignment of unmatched old rows, and sample scans.
 
 ## 1. Executive Summary
 
@@ -36,7 +36,7 @@ Public repository note:
 
 Current documented production deployment:
 
-- Deployment version: `@39`
+- Deployment version: `@40`
 - Deployment ID: `<YOUR_DEPLOYMENT_ID>`
 - Web app URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
 

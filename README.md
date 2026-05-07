@@ -64,7 +64,7 @@ Current web app deployment ID:
 Current deployed version:
 
 ```text
-@39 - External HTTPS scanner handoff
+@40 - Runtime web app URL fallback for scanner
 ```
 
 Current web app URL:
@@ -97,6 +97,8 @@ Update Mode authorization:
 - `UPDATE_AUTH_DISABLED`: explicit development-only escape hatch. Leave unset in production.
 
 Set these from the spreadsheet menu: `D&T Inventory` -> `Set App Config`, or use Apps Script project settings.
+
+If `WEB_APP_BASE_URL` is not configured, the deployed web app now tries `ScriptApp.getService().getUrl()` as a runtime fallback before disabling QR/external shortcuts. Keep the Script Property set in production anyway so generated QR links and Sheet-side tools are explicit and stable.
 
 Update Mode fails closed if no authorization properties are configured. A direct `?mode=tech` URL may show the Update workflow screen, but save/add/remove calls are rejected server-side until the active Google account is allowed or a valid PIN unlock token is supplied.
 
@@ -418,6 +420,14 @@ Post-deploy smoke tests:
 7. Run `Build QR Label Sheet` and spot-check a generated QR image/link.
 
 ## Release Log
+
+### 2026-05-07 10:24 HKT
+
+- Version: `@40`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: added a runtime `ScriptApp.getService().getUrl()` fallback for `WEB_APP_BASE_URL` so the external scanner receives a proper `/exec` target even when the Script Property is missing. Production should still set `WEB_APP_BASE_URL` explicitly before label printing.
+- Rollback note: version `@39` remains the external HTTPS scanner handoff fallback.
 
 ### 2026-05-07 10:06 HKT
 

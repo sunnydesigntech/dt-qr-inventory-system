@@ -1,7 +1,7 @@
 # D&T QR Inventory System - Workshop Workflow Roadmap
 
 Date: 2026-05-01
-Status: Active roadmap for turning the QR inventory app into the D&T workshop operating system. The standalone web app is deployed at `@39`; Room 419A uses the authoritative `Location Code` list for QR/storage routes, with live clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, readiness outputs, Figma-inspired dashboard hierarchy polish, phone-fit layout refinements, stronger phone-readable typography, an external top-level HTTPS QR scanner for reliable camera access outside the Apps Script frame plus tappable/manual route fallback, and Brother QL-1110 / QL-1110NWB print presets including single-label and safer 90mm x 29mm slim label support.
+Status: Active roadmap for turning the QR inventory app into the D&T workshop operating system. The standalone web app is deployed at `@40`; Room 419A uses the authoritative `Location Code` list for QR/storage routes, with live clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, readiness outputs, Figma-inspired dashboard hierarchy polish, phone-fit layout refinements, stronger phone-readable typography, an external top-level HTTPS QR scanner for reliable camera access outside the Apps Script frame plus tappable/manual route fallback, and Brother QL-1110 / QL-1110NWB print presets including single-label and safer 90mm x 29mm slim label support.
 
 ## Target Operating Model
 

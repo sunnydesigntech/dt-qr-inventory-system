@@ -1,6 +1,6 @@
 # D&T QR Inventory Rollout Checklist
 
-This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@39`; version `@38` is retained in Apps Script version history as the full-screen Apps Script-frame scanner fallback.
+This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@40`; version `@39` is retained in Apps Script version history as the external HTTPS scanner handoff fallback.
 
 Production URL:
 
@@ -86,6 +86,7 @@ Do not directly edit:
 ## QR Label Workflow
 
 1. Confirm `WEB_APP_BASE_URL` points to the active `/exec` deployment.
+   - The web app has a runtime fallback, but the Script Property should still be set before label printing so QR links are stable and explicit.
 2. Run Refresh QR Links.
 3. Run Build QR Label Sheet.
 4. Open `QR_Labels`.

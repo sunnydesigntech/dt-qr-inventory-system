@@ -463,7 +463,7 @@ function showConfigStatus() {
 
   const lines = [
     'SPREADSHEET_ID: ' + (status.scriptProperties.spreadsheetIdConfigured ? (status.scriptProperties.spreadsheetIdFromFallback ? 'fallback ' : 'configured ') + (status.maskedSpreadsheetId || '') : 'missing'),
-    'WEB_APP_BASE_URL: ' + (status.scriptProperties.webAppBaseUrlConfigured ? (status.scriptProperties.webAppBaseUrlFromFallback ? 'fallback/default' : 'configured') : 'missing'),
+    'WEB_APP_BASE_URL: ' + (status.scriptProperties.webAppBaseUrlConfigured ? (status.scriptProperties.webAppBaseUrlFromRuntime ? 'runtime fallback' : (status.scriptProperties.webAppBaseUrlFromFallback ? 'fallback/default' : 'configured')) : 'missing'),
     'INVENTORY_SHEET_NAME: ' + (status.scriptProperties.inventorySheetNameConfigured ? status.scriptProperties.inventorySheetName : 'default/fallback'),
     'Sheet in use: ' + (status.sheetInUse || '-'),
     'Data rows: ' + (typeof status.dataRows === 'number' ? status.dataRows : '-'),
@@ -953,7 +953,7 @@ function buildClientDiagnostics_(status) {
     spreadsheetIdSource: props.spreadsheetIdFromFallback ? 'fallback' : (props.spreadsheetIdPropertySet ? 'Script Property' : 'missing'),
     spreadsheetMaskedId: safeStatus.maskedSpreadsheetId || '',
     webAppBaseUrlSet: !!props.webAppBaseUrlConfigured,
-    webAppBaseUrlSource: props.webAppBaseUrlFromFallback ? 'fallback' : (props.webAppBaseUrlPropertySet ? 'Script Property' : 'missing'),
+    webAppBaseUrlSource: props.webAppBaseUrlFromRuntime ? 'runtime' : (props.webAppBaseUrlFromFallback ? 'fallback' : (props.webAppBaseUrlPropertySet ? 'Script Property' : 'missing')),
     inventorySheetNameSet: !!props.inventorySheetNameConfigured,
     sheetFound: !!safeStatus.sheetInUse && !safeStatus.sheetError,
     sheetInUse: safeStatus.sheetInUse ? safeStatus.sheetInUse + ' · ' + (safeStatus.dataRows || 0) + ' rows' : '',
@@ -3488,9 +3488,21 @@ function getWebAppBaseUrl_(options) {
   const propertyUrl = PropertiesService.getScriptProperties().getProperty(CONFIG.WEB_APP_URL_PROPERTY);
   if (propertyUrl && propertyUrl.trim()) return normalizeWebAppBaseUrl_(propertyUrl);
   if (CONFIG.DEFAULT_WEB_APP_BASE_URL) return normalizeWebAppBaseUrl_(CONFIG.DEFAULT_WEB_APP_BASE_URL);
+  const runtimeUrl = getRuntimeWebAppBaseUrl_();
+  if (runtimeUrl) return runtimeUrl;
 
   if (opts.silent) return '';
   throw new Error('WEB_APP_BASE_URL is not configured.');
+}
+
+function getRuntimeWebAppBaseUrl_() {
+  try {
+    if (typeof ScriptApp === 'undefined' || !ScriptApp.getService) return '';
+    const url = ScriptApp.getService().getUrl();
+    return url ? normalizeWebAppBaseUrl_(url) : '';
+  } catch (err) {
+    return '';
+  }
 }
 
 function getExternalScannerUrl_(options) {
@@ -3514,7 +3526,7 @@ function getAppConfig_() {
   return {
     spreadsheetId: cleanString_(props.getProperty(CONFIG.SPREADSHEET_ID_PROPERTY)),
     inventorySheetName: cleanString_(props.getProperty(CONFIG.INVENTORY_SHEET_NAME_PROPERTY)),
-    webAppBaseUrl: cleanString_(props.getProperty(CONFIG.WEB_APP_URL_PROPERTY)),
+    webAppBaseUrl: getWebAppBaseUrl_({ silent: true }),
     externalScannerUrl: getExternalScannerUrl_({ silent: true })
   };
 }
@@ -3550,7 +3562,8 @@ function getLightDiagnostics_() {
   const spreadsheetInfo = getSpreadsheetIdInfo_();
   const webAppBaseUrl = cleanString_(props.getProperty(CONFIG.WEB_APP_URL_PROPERTY));
   const inventorySheetName = cleanString_(props.getProperty(CONFIG.INVENTORY_SHEET_NAME_PROPERTY));
-  const effectiveWebAppBaseUrl = webAppBaseUrl || CONFIG.DEFAULT_WEB_APP_BASE_URL;
+  const runtimeWebAppBaseUrl = getRuntimeWebAppBaseUrl_();
+  const effectiveWebAppBaseUrl = webAppBaseUrl || CONFIG.DEFAULT_WEB_APP_BASE_URL || runtimeWebAppBaseUrl;
   return {
     light: true,
     maskedSpreadsheetId: spreadsheetInfo.maskedId,
@@ -3561,6 +3574,7 @@ function getLightDiagnostics_() {
       webAppBaseUrlConfigured: !!effectiveWebAppBaseUrl,
       webAppBaseUrlPropertySet: !!webAppBaseUrl,
       webAppBaseUrlFromFallback: !webAppBaseUrl && !!CONFIG.DEFAULT_WEB_APP_BASE_URL,
+      webAppBaseUrlFromRuntime: !webAppBaseUrl && !CONFIG.DEFAULT_WEB_APP_BASE_URL && !!runtimeWebAppBaseUrl,
       inventorySheetNameConfigured: !!inventorySheetName,
       inventorySheetName: inventorySheetName || CONFIG.DEFAULT_SHEET_NAME
     },
@@ -3573,7 +3587,8 @@ function getConfigStatus() {
   const spreadsheetInfo = getSpreadsheetIdInfo_();
   const webAppBaseUrl = cleanString_(props.getProperty(CONFIG.WEB_APP_URL_PROPERTY));
   const inventorySheetName = cleanString_(props.getProperty(CONFIG.INVENTORY_SHEET_NAME_PROPERTY));
-  const effectiveWebAppBaseUrl = webAppBaseUrl || CONFIG.DEFAULT_WEB_APP_BASE_URL;
+  const runtimeWebAppBaseUrl = getRuntimeWebAppBaseUrl_();
+  const effectiveWebAppBaseUrl = webAppBaseUrl || CONFIG.DEFAULT_WEB_APP_BASE_URL || runtimeWebAppBaseUrl;
 
   const status = {
     maskedSpreadsheetId: spreadsheetInfo.maskedId,
@@ -3585,6 +3600,7 @@ function getConfigStatus() {
       webAppBaseUrlConfigured: !!effectiveWebAppBaseUrl,
       webAppBaseUrlPropertySet: !!webAppBaseUrl,
       webAppBaseUrlFromFallback: !webAppBaseUrl && !!CONFIG.DEFAULT_WEB_APP_BASE_URL,
+      webAppBaseUrlFromRuntime: !webAppBaseUrl && !CONFIG.DEFAULT_WEB_APP_BASE_URL && !!runtimeWebAppBaseUrl,
       inventorySheetNameConfigured: !!inventorySheetName,
       inventorySheetName: inventorySheetName || CONFIG.DEFAULT_SHEET_NAME
     }

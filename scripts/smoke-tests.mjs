@@ -20,6 +20,11 @@ function buildLocationUrl(baseUrl, room, loc) {
   return cleanBase + '?room=' + encodeURIComponent(room) + '&loc=' + encodeURIComponent(loc);
 }
 
+function resolveWebAppBaseUrl({ propertyUrl = '', defaultUrl = '', runtimeUrl = '' } = {}) {
+  const clean = (value) => String(value || '').trim().replace(/[?#].*$/, '').replace(/\?+$/, '');
+  return clean(propertyUrl) || clean(defaultUrl) || clean(runtimeUrl);
+}
+
 function buildLocationHref(baseUrl, room, loc, mode) {
   const href = baseUrl ? buildLocationUrl(baseUrl, room, loc) : '?room=' + encodeURIComponent(room) + '&loc=' + encodeURIComponent(loc);
   return mode === 'tech' ? href + '&mode=tech' : href;
@@ -138,6 +143,8 @@ assert.equal(safeExternalUrl('ftp://example.com/file'), '');
 assert.equal(safeExternalUrl('//example.com/path'), '');
 assert.equal(safeExternalUrl('/relative/path'), '');
 assert.equal(safeExternalUrl('https://'), '');
+assert.equal(resolveWebAppBaseUrl({ runtimeUrl: 'https://script.google.com/macros/s/DEPLOYMENT/exec?scanner=1' }), 'https://script.google.com/macros/s/DEPLOYMENT/exec');
+assert.equal(resolveWebAppBaseUrl({ propertyUrl: 'https://configured.example/exec', runtimeUrl: 'https://runtime.example/exec' }), 'https://configured.example/exec');
 
 const vppViewUrl = buildLocationUrl('https://script.google.com/macros/s/DEPLOYMENT/exec', 'V++', 'Maker Bench 1');
 assert.match(vppViewUrl, /room=V%2B%2B/);
