@@ -32,6 +32,7 @@ Before deploying your own copy, configure these values in Apps Script `Script Pr
 
 - `SPREADSHEET_ID`
 - `WEB_APP_BASE_URL`
+- `EXTERNAL_SCANNER_URL`
 - `INVENTORY_SHEET_NAME` if your inventory tab is not named `Inventory`
 
 The source code deliberately leaves `DEFAULT_SPREADSHEET_ID` and `DEFAULT_WEB_APP_BASE_URL` blank so public GitHub code does not expose a production database or deployment URL.
@@ -63,7 +64,7 @@ Current web app deployment ID:
 Current deployed version:
 
 ```text
-@28 - Brother 90x29 safe-area print fix
+@39 - External HTTPS scanner handoff
 ```
 
 Current web app URL:
@@ -85,8 +86,29 @@ Recommended:
 Optional:
 
 - `INVENTORY_SHEET_NAME`
+- `EXTERNAL_SCANNER_URL` if you host the camera scanner somewhere other than the default GitHub Pages path.
+
+Update Mode authorization:
+
+- `UPDATE_AUTH_ALLOWED_EMAILS`: comma-separated staff emails allowed to change inventory.
+- `UPDATE_AUTH_ALLOWED_DOMAINS`: comma-separated domains allowed to change inventory.
+- `UPDATE_MODE_PIN_SHA256`: SHA-256 hash of the Update Mode PIN.
+- `UPDATE_MODE_PIN_SALT`: salt used when hashing the PIN.
+- `UPDATE_AUTH_DISABLED`: explicit development-only escape hatch. Leave unset in production.
 
 Set these from the spreadsheet menu: `D&T Inventory` -> `Set App Config`, or use Apps Script project settings.
+
+Update Mode fails closed if no authorization properties are configured. A direct `?mode=tech` URL may show the Update workflow screen, but save/add/remove calls are rejected server-side until the active Google account is allowed or a valid PIN unlock token is supplied.
+
+To create a PIN hash without storing the raw PIN in source, generate a random salt and hash `salt + pin`, for example:
+
+```sh
+node -e "const crypto=require('node:crypto'); const salt='replace-with-random-salt'; const pin='replace-with-pin'; console.log(crypto.createHash('sha256').update(salt+pin).digest('hex'))"
+```
+
+Store the salt in `UPDATE_MODE_PIN_SALT` and the printed hash in `UPDATE_MODE_PIN_SHA256`. Do not commit the raw PIN, salt used by production, or hash values to Git.
+
+Apps Script web apps may not always expose `Session.getActiveUser().getEmail()` depending on deployment and Workspace settings. Use `UPDATE_AUTH_ALLOWED_EMAILS` / `UPDATE_AUTH_ALLOWED_DOMAINS` where active-user email is available, and configure PIN unlock as the fallback for authorised workshop staff.
 
 ## Local Checks
 
@@ -117,6 +139,14 @@ Expected tracked files:
 - `appsscript.json`
 - `code.gs`
 - `index.html`
+
+Local smoke tests:
+
+```sh
+node scripts/smoke-tests.mjs
+```
+
+These tests do not use live Google Sheets. They cover safe external URL handling, View-first QR URL generation, V++ encoding, placeholder exclusion, and the local fail-closed authorization model.
 
 ## Push And Deploy
 
@@ -162,6 +192,15 @@ https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec?room=419A&loc=<stor
 
 QR labels should normally encode the View URL, not the Update URL. The printed QR opens the correct storage page in read-only View Mode; authorised users can enter Update Mode from inside the app.
 
+Manual authorization QA:
+
+1. Open a storage View URL and confirm no edit/add/remove controls are visible.
+2. Open the same route with `&mode=tech`.
+3. If Update authorization is not configured, confirm save/add/remove are blocked with a configuration message.
+4. If an allowed Google account is configured, confirm Update Mode unlocks for that account and mutation calls succeed only after server authorization.
+5. If PIN is configured, confirm an incorrect PIN fails and a correct PIN unlocks the session.
+6. Confirm QR labels still open View Mode by default.
+
 ## Brother QL-1110 Label Printing
 
 The QR Labels page includes browser-print presets for the Brother QL-1110 / QL-1110NWB 102mm direct thermal printer. Apps Script cannot silently print to USB, Bluetooth, Ethernet, or Wi-Fi printers from HtmlService; the app generates print-ready layouts and the user prints through the normal Brother driver, AirPrint, or OS print dialog.
@@ -195,7 +234,33 @@ Recommended Brother driver settings:
 
 The mobile landing page and top bars include an in-app `Scan QR` action. The scanner uses the browser camera over HTTPS and tries the native `BarcodeDetector` API first. Where native QR detection is unavailable, it loads `jsQR` from the jsDelivr CDN (`https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js`) as a lightweight fallback.
 
-If camera access is blocked or unsupported, the scanner modal still supports manual entry of a Location Code or a pasted `/exec?room=...&loc=...` QR URL. Scans and pasted QR URLs open View Mode by default; Update Mode requires an explicit in-app action.
+Camera access is not hosted by Apps Script. Google Apps Script HtmlService runs inside a browser frame, and some browsers or device policies block `getUserMedia()` even on the deployed HTTPS `/exec` URL. The app therefore opens a small top-level HTTPS scanner page first. The default scanner URL is:
+
+```text
+https://sunnydesigntech.github.io/dt-qr-inventory-system/scanner/
+```
+
+The scanner receives the active `/exec` URL as a `target` query parameter, scans the QR code, strips any `mode=tech`, and redirects back to the inventory app in View Mode. If you fork or self-host, set `EXTERNAL_SCANNER_URL` to your own HTTPS scanner page.
+
+If camera access is still blocked, the scanner remains usable through fallbacks:
+
+1. Open the camera scanner, tap `Start camera`, and allow camera permission.
+2. Scan the printed QR label with the phone's native Camera app and open the `/exec?room=...&loc=...` link directly.
+3. Paste a copied QR URL into the scanner modal.
+4. Enter the room and Location Code/storage route manually.
+5. Upload or take a QR image for local `jsQR` decoding where supported.
+
+Scans, uploaded QR images, and pasted QR URLs open View Mode by default. If a QR URL contains `mode=tech`, the scanner strips that route mode; Update Mode still requires an explicit in-app action plus the configured server-side Update authorization.
+
+Browser tips:
+
+- Use the deployed HTTPS `/exec` URL, not an editor preview.
+- Grant camera permission if prompted.
+- On iPhone/iPad, test Safari and Chrome, but expect Apps Script iframe limitations.
+- If the first scanner modal reports the Apps Script frame is blocking camera, use `Open full-screen camera scanner` before trying `Start camera`.
+- If the camera remains blocked, use native Camera scanning, pasted QR URLs, or manual room/location entry.
+
+The static scanner source lives in `scanner/index.html`. The GitHub Pages workflow in `.github/workflows/deploy-scanner-pages.yml` publishes only that scanner folder; the scanner does not contain Spreadsheet IDs, Apps Script deployment IDs, PINs, or private data.
 
 ## Admin Menu
 
@@ -214,6 +279,14 @@ The spreadsheet menu exposes:
 - Set App Config
 - Set WEB_APP_BASE_URL
 - Config Status / Diagnostics
+
+## Standalone Runtime vs Bound Sheet Script
+
+`code.gs` is the standalone web app runtime pushed by clasp with `index.html`, `app_styles.html`, `app_script.html`, and `appsscript.json`.
+
+`sheet_admin/InventoryAdmin.gs` is a separate bound spreadsheet control-plane script for the live Google Sheet menu. Changes in one project do not automatically update the other. Keep shared workflow behavior aligned deliberately, and do not assume a bound-script menu update changes the deployed web runtime.
+
+Sheet-provided external links such as Purchase Link and SDS Link are rendered clickable only when they use `http://` or `https://`. Unsupported or unsafe schemes are shown as blocked/non-clickable text.
 
 ## 419A Rollout Workflow
 
@@ -345,6 +418,30 @@ Post-deploy smoke tests:
 7. Run `Build QR Label Sheet` and spot-check a generated QR image/link.
 
 ## Release Log
+
+### 2026-05-07 10:06 HKT
+
+- Version: `@39`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: changed live camera scanning from an Apps Script-frame feature into an external top-level HTTPS scanner handoff. The app now passes the active `/exec` URL as a safe redirect target to the static scanner page. The scanner strips Update routes and redirects only to View Mode.
+- Rollback note: version `@38` remains the full-screen Apps Script-frame scanner fallback.
+
+### 2026-05-06 14:35 HKT
+
+- Version: `@38`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: added a tappable fallback link for the full-screen scanner in case Safari/Chrome blocks the scanner popup. The scanner still strips `mode=tech` from scanned/pasted URLs and keeps QR labels View-first.
+- Rollback note: version `@37` remains the initial full-screen scanner launch fallback.
+
+### 2026-05-06 14:32 HKT
+
+- Version: `@37`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: added a full-screen scanner launch path for Apps Script camera blocking. When the scanner detects it is running inside the Apps Script frame, it now offers `Open full-screen camera scanner`; the opened top-level scanner page then asks for camera permission. View-first QR routing, manual room/location entry, pasted QR URL handling, QR image decoding, and Update Mode authorization remain unchanged.
+- Rollback note: version `@36` remains the scanner photo-capture fallback.
 
 ### 2026-05-05 09:57 HKT
 

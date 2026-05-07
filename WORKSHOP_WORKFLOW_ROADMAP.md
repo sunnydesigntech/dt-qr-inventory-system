@@ -1,7 +1,7 @@
 # D&T QR Inventory System - Workshop Workflow Roadmap
 
 Date: 2026-05-01
-Status: Active roadmap for turning the QR inventory app into the D&T workshop operating system. The standalone web app is deployed at `@28`; Room 419A uses the authoritative `Location Code` list for QR/storage routes, with live clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, readiness outputs, Figma-inspired dashboard hierarchy polish, phone-fit layout refinements, stronger phone-readable typography, an in-app QR scanner with explicit phone camera permission start plus manual route fallback, and Brother QL-1110 / QL-1110NWB print presets including single-label and safer 90mm x 29mm slim label support.
+Status: Active roadmap for turning the QR inventory app into the D&T workshop operating system. The standalone web app is deployed at `@39`; Room 419A uses the authoritative `Location Code` list for QR/storage routes, with live clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, readiness outputs, Figma-inspired dashboard hierarchy polish, phone-fit layout refinements, stronger phone-readable typography, an external top-level HTTPS QR scanner for reliable camera access outside the Apps Script frame plus tappable/manual route fallback, and Brother QL-1110 / QL-1110NWB print presets including single-label and safer 90mm x 29mm slim label support.
 
 ## Target Operating Model
 
@@ -36,6 +36,7 @@ The app uses one Apps Script deployment URL. Storage, admin, and update views ar
 
 5. Technician Update Mode
    - Open Update Mode from the storage page.
+   - Unlock with an authorised account or configured PIN before changing live data.
    - Search/filter items by text, status, and category.
    - Update quantity and status.
    - Add items physically confirmed in the current storage.
@@ -66,6 +67,8 @@ Implemented:
 - Generated clickable `Storage_Master` with View/Update links and counts.
 - Save/add/remove audit logging to `Audit_Log`.
 - Update Mode Add item and Remove item workflow with placeholder-route preservation.
+- Server-enforced Update Mode authorization for save/add/remove mutations.
+- Stale-row item identity checks before update/remove writes.
 - Chemical safety note, reorder-level, and maintenance-detail readiness checks.
 
 Partially implemented:
@@ -78,7 +81,6 @@ Partially implemented:
 Not yet implemented:
 
 - Edit/archive item from the web UI beyond the current add/remove workflow.
-- PIN or role gate for Update Mode.
 - Dedicated HoD purchasing/budget dashboard.
 - Email alerts.
 - SDS file attachment workflow.
@@ -117,6 +119,7 @@ Do not physically roll out labels until:
 - QR labels render;
 - 419A pages load by Storage ID;
 - V++ URLs encode correctly;
+- Update Mode authorization is configured and direct `?mode=tech` access alone cannot mutate inventory;
 - Update Mode save works on a safe row;
 - chemical storage displays hazard styling;
 - staff/student View Mode is understandable;

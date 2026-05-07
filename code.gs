@@ -12,6 +12,7 @@
  * - SPREADSHEET_ID
  * - WEB_APP_BASE_URL (recommended; app can still read inventory without it)
  * - INVENTORY_SHEET_NAME (optional)
+ * - EXTERNAL_SCANNER_URL (optional; top-level HTTPS scanner page)
  */
 
 const CONFIG = Object.freeze({
@@ -20,9 +21,18 @@ const CONFIG = Object.freeze({
   DEFAULT_SHEET_NAME: 'Inventory',
   DEFAULT_SPREADSHEET_ID: '',
   DEFAULT_WEB_APP_BASE_URL: '',
+  DEFAULT_EXTERNAL_SCANNER_URL: 'https://sunnydesigntech.github.io/dt-qr-inventory-system/scanner/',
   SPREADSHEET_ID_PROPERTY: 'SPREADSHEET_ID',
   WEB_APP_URL_PROPERTY: 'WEB_APP_BASE_URL',
+  EXTERNAL_SCANNER_URL_PROPERTY: 'EXTERNAL_SCANNER_URL',
   INVENTORY_SHEET_NAME_PROPERTY: 'INVENTORY_SHEET_NAME',
+  UPDATE_AUTH_ALLOWED_EMAILS_PROPERTY: 'UPDATE_AUTH_ALLOWED_EMAILS',
+  UPDATE_AUTH_ALLOWED_DOMAINS_PROPERTY: 'UPDATE_AUTH_ALLOWED_DOMAINS',
+  UPDATE_MODE_PIN_SHA256_PROPERTY: 'UPDATE_MODE_PIN_SHA256',
+  UPDATE_MODE_PIN_SALT_PROPERTY: 'UPDATE_MODE_PIN_SALT',
+  UPDATE_AUTH_DISABLED_PROPERTY: 'UPDATE_AUTH_DISABLED',
+  UPDATE_AUTH_TOKEN_PREFIX: 'dt-inventory-update-auth:',
+  UPDATE_AUTH_TOKEN_TTL_SECONDS: 3600,
   ROLLOUT_ROOM: '419A',
   STATUS_OPTIONS: ['Good', 'Low Stock', 'Missing', 'Needs Maintenance'],
   HAZARD_CATEGORIES: ['chemicals', 'chemical'],
@@ -561,6 +571,7 @@ function buildErrorBootstrap_(params, err) {
     error: 'Configuration error: ' + message,
     warnings: [],
     config: getAppConfigSafe_(),
+    updateAuth: getUpdateAuthClientStateSafe_(),
     webAppBaseUrl: '',
     diagnostics: getDiagnosticsSafe_()
   };
@@ -582,9 +593,11 @@ function buildClientPayload_(params) {
     return {
       appTitle: CONFIG.APP_TITLE,
       webAppBaseUrl: webAppBaseUrl,
+      externalScannerUrl: getExternalScannerUrl_({ silent: true }),
       route: route,
       error: '',
       warnings: webAppBaseUrl ? [] : ['WEB_APP_BASE_URL is not configured. In-app browsing still works; QR generation and external links are disabled until it is set.'],
+      updateAuth: getUpdateAuthClientState_(),
       diagnostics: buildClientDiagnostics_(diagnostics),
       appData: appData
     };
@@ -598,9 +611,11 @@ function buildClientErrorPayload_(params, err) {
   return {
     appTitle: CONFIG.APP_TITLE,
     webAppBaseUrl: getWebAppBaseUrl_({ silent: true }),
+    externalScannerUrl: getExternalScannerUrl_({ silent: true }),
     route: { name: 'error', kind: 'generic', message: message },
     error: message,
     warnings: [],
+    updateAuth: getUpdateAuthClientStateSafe_(),
     diagnostics: buildClientDiagnostics_(getDiagnosticsSafe_()),
     appData: buildEmptyClientAppData_()
   };
@@ -1015,6 +1030,7 @@ function saveInventoryUpdates(payload) {
   if (!payload || typeof payload !== 'object') {
     throw new Error('Invalid save payload.');
   }
+  const auth = requireUpdateAuthorization_(payload);
 
   const room = cleanString_(payload.room);
   const loc = cleanString_(payload.loc);
@@ -1037,7 +1053,7 @@ function saveInventoryUpdates(payload) {
   const locNeedle = loc.toLowerCase();
   const lastRow = values.length;
   const seen = {};
-  const actor = getActiveUserEmail_();
+  const actor = auth.user || getActiveUserEmail_();
   const timestamp = new Date();
   const auditEvents = [];
 
@@ -1055,6 +1071,7 @@ function saveInventoryUpdates(payload) {
     if (!rowMatchesRoomLoc_(row, map, roomNeedle, locNeedle)) {
       throw new Error('Row ' + rowNum + ' does not belong to the selected room/location.');
     }
+    assertExpectedInventoryRowIdentity_(row, map, update, rowNum);
 
     if (update.qty === '' || update.qty == null) {
       throw new Error('Quantity is required for row ' + rowNum + '.');
@@ -1119,6 +1136,7 @@ function addInventoryItemToLocation(payload) {
   if (!payload || typeof payload !== 'object') {
     throw new Error('Invalid add-item payload.');
   }
+  const auth = requireUpdateAuthorization_(payload);
 
   const room = cleanString_(payload.room);
   const loc = cleanString_(payload.loc);
@@ -1152,7 +1170,7 @@ function addInventoryItemToLocation(payload) {
     throw new Error('Storage location not found. Add items only from a valid storage page.');
   }
 
-  const actor = getActiveUserEmail_();
+  const actor = auth.user || getActiveUserEmail_();
   const timestamp = new Date();
   const newRow = buildNewInventoryRow_(values[0].length, map, context.row, {
     itemId: cleanString_(item.itemId) || generateItemId_(room, loc, itemName),
@@ -1199,6 +1217,7 @@ function removeInventoryItemFromLocation(payload) {
   if (!payload || typeof payload !== 'object') {
     throw new Error('Invalid remove-item payload.');
   }
+  const auth = requireUpdateAuthorization_(payload);
 
   const room = cleanString_(payload.room);
   const loc = cleanString_(payload.loc);
@@ -1217,11 +1236,12 @@ function removeInventoryItemFromLocation(payload) {
   if (!rowMatchesRoomLoc_(row, map, room.toLowerCase(), loc.toLowerCase())) {
     throw new Error('The selected item does not belong to this storage.');
   }
+  assertExpectedInventoryRowIdentity_(row, map, payload, rowNum);
   if (!isInventoryItemRow_(row, map)) {
     throw new Error('Only real inventory item rows can be removed.');
   }
 
-  const actor = getActiveUserEmail_();
+  const actor = auth.user || getActiveUserEmail_();
   const timestamp = new Date();
   const matching = countLocationRows_(values, map, room, loc);
   if (matching.total <= 1 && !matching.hasPlaceholder) {
@@ -1398,6 +1418,64 @@ function rowMatchesRoomLoc_(rowValues, map, roomNeedle, locNeedle) {
   if (rowLocationCode && rowLocationCode === locNeedle) return true;
 
   return false;
+}
+
+function assertExpectedInventoryRowIdentity_(row, map, expected, rowNum) {
+  const payload = expected || {};
+  const expectedItemId = cleanString_(payload.itemId || payload.id);
+  const expectedItemName = cleanString_(payload.itemName || payload.name);
+  const actualItemId = cleanString_(row[map.itemId]);
+  const actualItemName = cleanString_(row[map.itemName]);
+
+  if (!expectedItemId && !expectedItemName) {
+    throw new Error('Missing expected item identity for row ' + rowNum + '. Refresh the page before changing inventory.');
+  }
+
+  if (expectedItemId || actualItemId) {
+    if (!expectedItemId || !actualItemId || normalizeIdentity_(expectedItemId) !== normalizeIdentity_(actualItemId)) {
+      throw new Error('Row ' + rowNum + ' no longer matches the item loaded on this page. Refresh before saving.');
+    }
+  } else if (normalizeIdentity_(expectedItemName) !== normalizeIdentity_(actualItemName)) {
+    throw new Error('Row ' + rowNum + ' no longer matches the item loaded on this page. Refresh before saving.');
+  }
+
+  const expectedCategory = cleanString_(payload.category || payload.expectedCategory);
+  if (expectedCategory && normalizeIdentity_(expectedCategory) !== normalizeIdentity_(row[map.category])) {
+    throw new Error('Row ' + rowNum + ' no longer matches the item loaded on this page. Refresh before saving.');
+  }
+
+  const expectedQty = cleanString_(payload.expectedQty);
+  if (expectedQty && expectedQty !== cleanString_(row[map.qty])) {
+    throw new Error('Row ' + rowNum + ' was changed by another session. Refresh before saving.');
+  }
+
+  const expectedStatus = cleanString_(payload.expectedStatus);
+  if (expectedStatus && normalizeStatus_(expectedStatus) !== normalizeStatus_(row[map.status])) {
+    throw new Error('Row ' + rowNum + ' was changed by another session. Refresh before saving.');
+  }
+
+  const expectedLocation = cleanString_(payload.specificLocation || payload.location);
+  if (expectedLocation && normalizeIdentity_(expectedLocation) !== normalizeIdentity_(row[map.location])) {
+    throw new Error('Row ' + rowNum + ' storage identity changed. Refresh before saving.');
+  }
+
+  const storageChecks = [
+    { key: 'storageId', index: map.storageId },
+    { key: 'storageLabel', index: map.storageLabel },
+    { key: 'locationCode', index: map.locationCode }
+  ];
+  storageChecks.forEach(function (check) {
+    const expectedValue = cleanString_(payload[check.key]);
+    if (!expectedValue || check.index === -1) return;
+    const actualValue = getOptionalValue_(row, check.index);
+    if (actualValue && normalizeIdentity_(expectedValue) !== normalizeIdentity_(actualValue)) {
+      throw new Error('Row ' + rowNum + ' storage identity changed. Refresh before saving.');
+    }
+  });
+}
+
+function normalizeIdentity_(value) {
+  return cleanString_(value).toLowerCase().replace(/\s+/g, ' ');
 }
 
 function findLocationContextRow_(values, map, room, loc) {
@@ -1732,12 +1810,191 @@ function readRecentAuditEvents_(limit) {
 }
 
 function getActiveUserEmail_() {
+  return getActiveUserEmailSafe_() || 'unknown user';
+}
+
+function getActiveUserEmailSafe_() {
   try {
     const email = Session.getActiveUser().getEmail();
-    return cleanString_(email) || 'unknown user';
+    return cleanString_(email).toLowerCase();
   } catch (err) {
-    return 'unknown user';
+    return '';
   }
+}
+
+function getUpdateAuthConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const allowedEmails = splitPropertyList_(props.getProperty(CONFIG.UPDATE_AUTH_ALLOWED_EMAILS_PROPERTY)).map(function (email) {
+    return email.toLowerCase();
+  });
+  const allowedDomains = splitPropertyList_(props.getProperty(CONFIG.UPDATE_AUTH_ALLOWED_DOMAINS_PROPERTY)).map(function (domain) {
+    return domain.replace(/^@+/, '').toLowerCase();
+  });
+  const pinHash = cleanString_(props.getProperty(CONFIG.UPDATE_MODE_PIN_SHA256_PROPERTY)).toLowerCase();
+  const pinSalt = cleanString_(props.getProperty(CONFIG.UPDATE_MODE_PIN_SALT_PROPERTY));
+  const disabled = isTruthyProperty_(props.getProperty(CONFIG.UPDATE_AUTH_DISABLED_PROPERTY));
+  const pinEnabled = !!(pinHash && pinSalt);
+  return {
+    allowedEmails: allowedEmails,
+    allowedDomains: allowedDomains,
+    pinHash: pinHash,
+    pinSalt: pinSalt,
+    pinEnabled: pinEnabled,
+    disabled: disabled,
+    configured: disabled || allowedEmails.length > 0 || allowedDomains.length > 0 || pinEnabled
+  };
+}
+
+function getUpdateAuthClientState_() {
+  const config = getUpdateAuthConfig_();
+  const email = getActiveUserEmailSafe_();
+  const activeUserAllowed = isActiveUserAllowedForUpdate_(config, email);
+  return {
+    configured: config.configured,
+    pinEnabled: config.pinEnabled,
+    activeUserAvailable: !!email,
+    activeUserAllowed: activeUserAllowed || config.disabled,
+    authDisabled: config.disabled,
+    tokenTtlSeconds: CONFIG.UPDATE_AUTH_TOKEN_TTL_SECONDS,
+    message: config.configured
+      ? (activeUserAllowed || config.disabled ? 'Update Mode is available for this session.' : 'Unlock Update Mode before changing live inventory.')
+      : 'Update Mode is not configured. Ask an administrator to configure update authorization.'
+  };
+}
+
+function getUpdateAuthClientStateSafe_() {
+  try {
+    return getUpdateAuthClientState_();
+  } catch (err) {
+    return {
+      configured: false,
+      pinEnabled: false,
+      activeUserAvailable: false,
+      activeUserAllowed: false,
+      authDisabled: false,
+      tokenTtlSeconds: CONFIG.UPDATE_AUTH_TOKEN_TTL_SECONDS,
+      message: 'Update Mode authorization state is unavailable.'
+    };
+  }
+}
+
+function authorizeUpdateMode(pin) {
+  const config = getUpdateAuthConfig_();
+  if (!config.configured) {
+    throw new Error('Update Mode is not configured. Ask an administrator to configure update authorization.');
+  }
+
+  const email = getActiveUserEmailSafe_();
+  if (config.disabled) {
+    return buildUpdateAuthSuccess_('disabled', getActiveUserEmail_());
+  }
+  if (isActiveUserAllowedForUpdate_(config, email)) {
+    return buildUpdateAuthSuccess_('account', email);
+  }
+
+  if (!config.pinEnabled) {
+    throw new Error('This account is not authorised for Update Mode, and PIN unlock is not configured.');
+  }
+  const providedPin = cleanString_(pin);
+  if (!providedPin) {
+    throw new Error('Enter the Update Mode PIN.');
+  }
+  const computedHash = computeSha256Hex_(config.pinSalt + providedPin);
+  if (!constantTimeStringEquals_(computedHash, config.pinHash)) {
+    throw new Error('Update Mode PIN is incorrect.');
+  }
+
+  return buildUpdateAuthSuccess_('pin', email || 'pin unlock');
+}
+
+function buildUpdateAuthSuccess_(method, user) {
+  const token = Utilities.getUuid();
+  const cachePayload = JSON.stringify({
+    method: method,
+    user: user || 'unknown user',
+    createdAt: new Date().toISOString()
+  });
+  CacheService.getScriptCache().put(CONFIG.UPDATE_AUTH_TOKEN_PREFIX + token, cachePayload, CONFIG.UPDATE_AUTH_TOKEN_TTL_SECONDS);
+  return {
+    success: true,
+    token: token,
+    method: method,
+    expiresInSeconds: CONFIG.UPDATE_AUTH_TOKEN_TTL_SECONDS,
+    updateAuth: getUpdateAuthClientState_(),
+    message: 'Update Mode unlocked for this browser session.'
+  };
+}
+
+function requireUpdateAuthorization_(payload) {
+  const config = getUpdateAuthConfig_();
+  if (!config.configured) {
+    throw new Error('Update Mode is not configured. Ask an administrator to configure update authorization.');
+  }
+  if (config.disabled) {
+    return { method: 'disabled', user: getActiveUserEmail_() };
+  }
+
+  const email = getActiveUserEmailSafe_();
+  if (isActiveUserAllowedForUpdate_(config, email)) {
+    return { method: 'account', user: email };
+  }
+
+  const token = cleanString_(payload && (payload.updateAuthToken || payload.authToken));
+  const tokenInfo = getUpdateAuthTokenInfo_(token);
+  if (tokenInfo) {
+    return { method: tokenInfo.method || 'token', user: email || tokenInfo.user || 'pin unlock' };
+  }
+
+  throw new Error('Update Mode is locked. Unlock with an authorised account or PIN before changing live inventory.');
+}
+
+function getUpdateAuthTokenInfo_(token) {
+  if (!token) return false;
+  try {
+    const cached = CacheService.getScriptCache().get(CONFIG.UPDATE_AUTH_TOKEN_PREFIX + token);
+    if (!cached) return false;
+    const parsed = JSON.parse(cached);
+    return parsed && parsed.createdAt ? parsed : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function isActiveUserAllowedForUpdate_(config, email) {
+  const value = cleanString_(email).toLowerCase();
+  if (!value) return false;
+  if (config.allowedEmails.indexOf(value) !== -1) return true;
+  const domain = value.indexOf('@') !== -1 ? value.split('@').pop().toLowerCase() : '';
+  return !!(domain && config.allowedDomains.indexOf(domain) !== -1);
+}
+
+function splitPropertyList_(value) {
+  return cleanString_(value).split(',').map(function (part) {
+    return cleanString_(part);
+  }).filter(Boolean);
+}
+
+function isTruthyProperty_(value) {
+  return ['1', 'true', 'yes', 'y', 'on'].indexOf(cleanString_(value).toLowerCase()) !== -1;
+}
+
+function computeSha256Hex_(value) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8);
+  return bytes.map(function (byte) {
+    const unsigned = byte < 0 ? byte + 256 : byte;
+    return ('0' + unsigned.toString(16)).slice(-2);
+  }).join('');
+}
+
+function constantTimeStringEquals_(left, right) {
+  const a = cleanString_(left);
+  const b = cleanString_(right);
+  let diff = a.length ^ b.length;
+  const length = Math.max(a.length, b.length);
+  for (let i = 0; i < length; i++) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return diff === 0;
 }
 
 function ensureAppColumns_() {
@@ -3236,12 +3493,29 @@ function getWebAppBaseUrl_(options) {
   throw new Error('WEB_APP_BASE_URL is not configured.');
 }
 
+function getExternalScannerUrl_(options) {
+  const opts = options || {};
+  const propertyUrl = PropertiesService.getScriptProperties().getProperty(CONFIG.EXTERNAL_SCANNER_URL_PROPERTY);
+  const raw = cleanString_(propertyUrl) || cleanString_(CONFIG.DEFAULT_EXTERNAL_SCANNER_URL);
+  if (!raw) {
+    if (opts.silent) return '';
+    throw new Error('EXTERNAL_SCANNER_URL is not configured.');
+  }
+  const normalized = normalizeWebAppBaseUrl_(raw);
+  if (!/^https?:\/\//i.test(normalized)) {
+    if (opts.silent) return '';
+    throw new Error('EXTERNAL_SCANNER_URL must start with http:// or https://.');
+  }
+  return normalized.replace(/\/?$/, '/');
+}
+
 function getAppConfig_() {
   const props = PropertiesService.getScriptProperties();
   return {
     spreadsheetId: cleanString_(props.getProperty(CONFIG.SPREADSHEET_ID_PROPERTY)),
     inventorySheetName: cleanString_(props.getProperty(CONFIG.INVENTORY_SHEET_NAME_PROPERTY)),
-    webAppBaseUrl: cleanString_(props.getProperty(CONFIG.WEB_APP_URL_PROPERTY))
+    webAppBaseUrl: cleanString_(props.getProperty(CONFIG.WEB_APP_URL_PROPERTY)),
+    externalScannerUrl: getExternalScannerUrl_({ silent: true })
   };
 }
 
@@ -3252,7 +3526,8 @@ function getAppConfigSafe_() {
     return {
       spreadsheetId: '',
       inventorySheetName: '',
-      webAppBaseUrl: ''
+      webAppBaseUrl: '',
+      externalScannerUrl: ''
     };
   }
 }

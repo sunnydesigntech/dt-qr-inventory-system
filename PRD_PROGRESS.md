@@ -2,7 +2,7 @@
 
 Version: V2.5 Progress PRD and Workshop Workflow Plan
 Date: 2026-05-01
-Status: Template-based Apps Script runtime deployed through `@28`; live 419A Location Code routing, QR generation, clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, mobile scanner/search-first UX, explicit phone camera permission start flow, stronger mobile readability tokens, Figma-inspired dashboard hierarchy polish, Brother QL-1110 label print presets including single-label printing and a safer 90mm x 29mm slim-label printable area, and readiness outputs have been regenerated from the dashboard Sheet workflow. Full physical QR rollout remains gated by warning review, manual reassignment of unmatched old rows, and sample scans.
+Status: Template-based Apps Script runtime deployed through `@39`; live 419A Location Code routing, QR generation, clickable Storage_Master, QR_Labels, Audit_Log add/remove/update recording, mobile scanner/search-first UX with an external top-level HTTPS scanner page for reliable camera access outside the Apps Script frame, stronger mobile readability tokens, Figma-inspired dashboard hierarchy polish, Brother QL-1110 label print presets including single-label printing and a safer 90mm x 29mm slim-label printable area, and readiness outputs have been regenerated from the dashboard Sheet workflow. Full physical QR rollout remains gated by warning review, manual reassignment of unmatched old rows, and sample scans.
 
 ## 1. Executive Summary
 
@@ -36,13 +36,13 @@ Public repository note:
 
 Current documented production deployment:
 
-- Deployment version: `@28`
+- Deployment version: `@39`
 - Deployment ID: `<YOUR_DEPLOYMENT_ID>`
 - Web app URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
 
 ### Local Repo State
 
-The local repo contains the template-based runtime, documentation, 419A Location Code routing polish, Figma-approved dashboard UI refinements, clickable Storage_Master generation, real-use Add/Remove item workflow hardening, mobile scanner/search-first UX, explicit phone camera permission start flow, stronger phone-readable typography polish, Figma-inspired dashboard command/metric hierarchy, and Brother QL-1110 / QL-1110NWB print presets for A4, fitted 90mm x 29mm, 102mm x 50mm, and 102mm x 70mm safety labels. Private workbook data and generated database-match outputs are intentionally excluded from Git. The standalone web runtime was pushed and deployed as Apps Script version `@28`.
+The local repo contains the template-based runtime, documentation, 419A Location Code routing polish, Figma-approved dashboard UI refinements, clickable Storage_Master generation, real-use Add/Remove item workflow hardening, mobile scanner/search-first UX, external HTTPS scanner handoff for Apps Script camera-frame blocking, stronger phone-readable typography polish, Figma-inspired dashboard command/metric hierarchy, and Brother QL-1110 / QL-1110NWB print presets for A4, fitted 90mm x 29mm, 102mm x 50mm, and 102mm x 70mm safety labels. Private workbook data and generated database-match outputs are intentionally excluded from Git. The standalone web runtime was pushed and deployed as Apps Script version `@39`.
 
 Important note:
 
@@ -255,6 +255,10 @@ Implemented:
 - Success/failure notices.
 - Post-save re-render.
 - Bridge warning outside deployed Apps Script context.
+- Server-enforced Update Mode authorization for save/add/remove mutations.
+- Fail-closed behavior when Update authorization is not configured.
+- Optional account/domain authorization and PIN unlock token flow through Apps Script Script Properties.
+- Stale-row protection that checks expected item identity before update/remove writes.
 - `Last Updated` and `Updated By` metadata updates when those optional columns exist.
 - `Audit_Log` append for actual quantity/status changes.
 
@@ -614,6 +618,10 @@ The QR label sheet should be verified to include:
 
 If the current local implementation does not include all fields exactly, adjust before release.
 
+### Update Mode Authorization
+
+Update Mode is now treated as a server-enforced safety gate, not just a UI route. Direct `?mode=tech` access can request the Update screen, but save/add/remove calls must be authorised by allowed active-user email/domain or a short-lived PIN token. Apps Script may not expose the active user email in every deployment mode, so PIN unlock remains the operational fallback. Production must configure authorization Script Properties before live mutation testing.
+
 ## 15. Roadmap
 
 ### Immediate Next Steps
@@ -629,7 +637,7 @@ If the current local implementation does not include all fields exactly, adjust 
 
 ### Short-Term Enhancements
 
-- PIN or authorised role protection for Update Mode.
+- Operational review of Update Mode authorization settings with real staff accounts/PIN before wider rollout.
 - Add/edit item workflow inside the app.
 - QR label print layout improvements.
 - Import preview/dry-run summary before committing rows.

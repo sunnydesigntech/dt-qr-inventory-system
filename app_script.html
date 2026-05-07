@@ -7,6 +7,8 @@
   var appData = BOOT.appData || emptyAppData();
   var diagnostics = BOOT.diagnostics || {};
   var route = initialRoute();
+  var UPDATE_AUTH_STORAGE_KEY = 'dtInventoryUpdateAuthToken';
+  var updateAuthToken = readSessionValue(UPDATE_AUTH_STORAGE_KEY);
   var localItems = [];
   var saveState = 'idle';
   var saveError = '';
@@ -19,12 +21,19 @@
     error: '',
     message: '',
     manual: '',
+    manualRoom: '',
+    manualLoc: '',
     suggestions: [],
+    diagnostics: null,
+    permissionState: '',
+    lastCameraError: '',
+    imageDecodeMessage: '',
     stream: null,
     raf: 0,
     starting: false,
     detector: null,
-    cameraRequested: false
+    cameraRequested: false,
+    standaloneUrl: ''
   };
 
   function emptyAppData() {
@@ -67,6 +76,189 @@
 
   function textValue(value) {
     return String(value == null ? '' : value).trim();
+  }
+
+  function readSessionValue(key) {
+    try {
+      return window.sessionStorage ? textValue(window.sessionStorage.getItem(key)) : '';
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function writeSessionValue(key, value) {
+    try {
+      if (!window.sessionStorage) return;
+      if (value) window.sessionStorage.setItem(key, value);
+      else window.sessionStorage.removeItem(key);
+    } catch (err) {}
+  }
+
+  function updateAuthState() {
+    return BOOT.updateAuth || {};
+  }
+
+  function isUpdateUnlocked() {
+    var auth = updateAuthState();
+    if (!auth.configured) return false;
+    return !!(auth.authDisabled || auth.activeUserAllowed || updateAuthToken);
+  }
+
+  function updateAuthPayload() {
+    return updateAuthToken ? { updateAuthToken: updateAuthToken } : {};
+  }
+
+  function safeExternalUrl(value) {
+    var raw = textValue(value);
+    if (!raw || !/^https?:\/\//i.test(raw)) return '';
+    try {
+      var parsed = new URL(raw);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : '';
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function configuredExternalScannerUrl() {
+    var raw = textValue(BOOT.externalScannerUrl);
+    if (!raw || !/^https?:\/\//i.test(raw)) return '';
+    try {
+      var parsed = new URL(raw);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : '';
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function hasUrlScheme(value) {
+    return /^[a-z][a-z0-9+.-]*:/i.test(textValue(value));
+  }
+
+  function routeUrlKey(url) {
+    if (!url) return '';
+    return (url.protocol + '//' + url.host + url.pathname).replace(/\/+$/, '').toLowerCase();
+  }
+
+  function configuredWebAppUrlKey() {
+    try {
+      var base = textValue(BOOT.webAppBaseUrl);
+      return base ? routeUrlKey(new URL(base)) : '';
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function currentUrlKey() {
+    try {
+      return routeUrlKey(new URL(window.location.href));
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function isFramedApp() {
+    try {
+      return window.self !== window.top;
+    } catch (err) {
+      return true;
+    }
+  }
+
+  function shouldAutoOpenScanner() {
+    try {
+      var params = new URL(window.location.href).searchParams;
+      return params.get('scanner') === '1' || params.get('scan') === '1';
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function standaloneScannerUrl() {
+    var external = configuredExternalScannerUrl();
+    if (external) {
+      try {
+        var scannerUrl = new URL(external);
+        var target = textValue(BOOT.webAppBaseUrl);
+        if (!target) {
+          try {
+            var current = new URL(window.location.href);
+            ['room', 'loc', 'mode', 'admin', 'printer', 'scanner', 'scan', 'topscanner'].forEach(function (key) {
+              current.searchParams.delete(key);
+            });
+            target = current.toString();
+          } catch (targetErr) {
+            target = '';
+          }
+        }
+        if (target) scannerUrl.searchParams.set('target', target);
+        scannerUrl.searchParams.set('source', 'apps-script');
+        return scannerUrl.toString();
+      } catch (externalErr) {}
+    }
+    try {
+      var url = new URL(window.location.href);
+      ['room', 'loc', 'mode', 'admin', 'printer', 'label'].forEach(function (key) {
+        url.searchParams.delete(key);
+      });
+      url.searchParams.set('scanner', '1');
+      url.searchParams.set('topscanner', '1');
+      return url.toString();
+    } catch (err) {
+      try {
+        var fallback = new URL(textValue(BOOT.webAppBaseUrl) || window.location.href);
+        fallback.searchParams.set('scanner', '1');
+        fallback.searchParams.set('topscanner', '1');
+        return fallback.toString();
+      } catch (innerErr) {
+        return '';
+      }
+    }
+  }
+
+  function openStandaloneScanner() {
+    var url = standaloneScannerUrl();
+    scannerState.standaloneUrl = url;
+    if (!url) {
+      scannerState.error = 'Could not create the full-screen scanner link. Use the phone Camera app or enter Location Code manually.';
+      updateScannerStatus();
+      return;
+    }
+    var opened = null;
+    try {
+      opened = window.open(url, '_blank');
+      if (opened) {
+        try { opened.opener = null; } catch (err) {}
+      }
+    } catch (err) {
+      opened = null;
+    }
+    if (opened) {
+      scannerState.error = '';
+      scannerState.message = 'Full-screen scanner opened. In the new tab, tap Start camera and allow camera permission.';
+      updateScannerStatus();
+    } else {
+      scannerState.error = 'Popup blocked. Open this full-screen scanner link manually: ' + url;
+      updateScannerStatus();
+      render();
+    }
+  }
+
+  function isAllowedInventoryUrl(url) {
+    if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:')) return false;
+    var key = routeUrlKey(url);
+    var configured = configuredWebAppUrlKey();
+    var current = currentUrlKey();
+    if (configured && key === configured) return true;
+    if (current && key === current) return true;
+    return false;
+  }
+
+  function stripUnsafeMode(params) {
+    return {
+      room: textValue(params && params.get('room')),
+      loc: textValue(params && params.get('loc')),
+      modeStripped: !!(params && params.get('mode'))
+    };
   }
 
   function icon(name, size, cls) {
@@ -185,7 +377,7 @@
 
   function updateUrl(params) {
     var url = new URL(window.location.href);
-    ['room', 'loc', 'mode', 'admin', 'printer'].forEach(function (key) { url.searchParams.delete(key); });
+    ['room', 'loc', 'mode', 'admin', 'printer', 'scanner', 'scan', 'topscanner'].forEach(function (key) { url.searchParams.delete(key); });
     Object.keys(params || {}).forEach(function (key) {
       if (params[key]) url.searchParams.set(key, params[key]);
     });
@@ -366,8 +558,9 @@
       '@page { size: ' + cfg.pageSize + '; margin: 0; }' +
       'body,html{width:' + labelWidth + ';min-width:' + labelWidth + ';height:auto!important;min-height:0!important;margin:0!important;padding:0!important;background:#fff!important;}' +
       '.app-shell{width:' + labelWidth + '!important;max-width:' + labelWidth + '!important;min-height:0!important;margin:0!important;padding:0!important;box-shadow:none!important;overflow:visible!important;}' +
-      '.topbar,.label-print-controls,.label-printer-notes,.label-mode-tabs{display:none!important;}' +
+      '.topbar,.label-print-controls,.label-printer-notes,.label-mode-tabs,.label-single-actions{display:none!important;}' +
       '.label-sheet{display:block!important;width:' + labelWidth + '!important;min-width:' + labelWidth + '!important;min-height:0!important;margin:0!important;border:0!important;box-shadow:none!important;padding:0!important;background:#fff!important;}' +
+      '.label-preview-item{display:block!important;width:' + labelWidth + '!important;margin:0!important;padding:0!important;break-inside:avoid!important;page-break-inside:avoid!important;}' +
       '.qr-label{box-sizing:border-box!important;width:' + printBoxWidth + '!important;min-height:' + printBoxHeight + '!important;height:' + printBoxHeight + '!important;margin:' + printBoxMargin + '!important;padding:1.2mm 1.6mm!important;border:0!important;border-radius:0!important;box-shadow:none!important;page-break-before:auto!important;page-break-after:auto!important;break-before:auto!important;break-after:auto!important;}' +
       '.label-sheet.is-brother-slim .qr-label{padding:.9mm 1.1mm!important;}' +
       '}';
@@ -612,6 +805,7 @@
 
   function renderLocation() {
     var loc = route.loc;
+    var updateUnlocked = route.mode === 'tech' && isUpdateUnlocked();
     var room = (appData.rooms || []).filter(function (r) { return r.code === loc.room; })[0] || { code: loc.room, name: 'Room ' + loc.room };
     localItems = (appData.items[loc.key] || []).map(function (item) {
       return Object.assign({}, item, { changed: !!item.changed, _orig: item._orig || { qty: item.qty, status: item.status } });
@@ -647,8 +841,9 @@
       html += '<div class="px-4 pt-3"><div class="update-mode-note">' +
         '<div class="flex items-start gap-3"><div class="min-w-0 flex-1"><div class="font-semibold text-amber-950 flex items-center gap-1.5">' + icon('edit', 14) + 'Update Mode</div>' +
         '<div class="text-[12px] text-amber-900/90 mt-1">Add items, remove items, or change quantity/status only for this storage. Every saved change writes to Inventory and Audit_Log.</div></div>' +
-        '<button data-action="open-add-item" class="btn btn-primary py-2 px-3 text-[12px] shrink-0">' + icon('plus', 14) + ' Add item</button></div>' +
+        (updateUnlocked ? '<button data-action="open-add-item" class="btn btn-primary py-2 px-3 text-[12px] shrink-0">' + icon('plus', 14) + ' Add item</button>' : '') + '</div>' +
         '</div></div>';
+      if (!updateUnlocked) html += renderUpdateAuthPanel();
     } else if (loc.hazard) {
       html += '<div class="px-4 pt-3"><div class="hazard-callout">' +
         '<div class="font-semibold text-red-900 flex items-center gap-1.5">' + icon('hazard', 14) + 'Chemical storage</div>' +
@@ -667,15 +862,34 @@
     html += '<select id="categoryFilter" class="select py-2.5 text-[13px] w-full sm:w-[150px]">' + categoryOptions.map(function (option) {
       return '<option ' + (option === category ? 'selected' : '') + '>' + esc(option) + '</option>';
     }).join('') + '</select></div>';
-    if (route.mode === 'tech' && addFormOpen) html += renderAddItemForm();
+    if (updateUnlocked && addFormOpen) html += renderAddItemForm();
     html += renderSaveNotice();
-    html += '<div class="px-4 pt-3 ' + (route.mode === 'tech' ? 'pb-32' : 'pb-8') + ' space-y-2.5">';
+    html += '<div class="px-4 pt-3 ' + (updateUnlocked ? 'pb-32' : 'pb-8') + ' space-y-2.5">';
     filtered.forEach(function (item) { html += renderItemCard(item); });
     if (!filtered.length) html += '<div class="text-center py-8 text-[13px] text-slate-500">No matching items.</div>';
     html += '</div>';
-    if (route.mode === 'tech') html += renderSaveBar();
+    if (updateUnlocked) html += renderSaveBar();
     html += '</div>';
     return html;
+  }
+
+  function renderUpdateAuthPanel() {
+    var auth = updateAuthState();
+    var msg = auth.message || 'Unlock Update Mode before changing live inventory.';
+    var html = '<div class="px-4 pt-3"><div class="rounded-2xl border border-amber-200 bg-white p-4 text-amber-950 shadow-sm">' +
+      '<div class="font-display text-[17px] font-semibold flex items-center gap-2">' + icon('shield', 17) + 'Update Mode locked</div>' +
+      '<div class="mt-1 text-[14px] leading-relaxed">' + esc(msg) + '</div>' +
+      '<div class="mt-2 text-[13px] text-amber-800">Viewing remains available. Saving, adding, and removing require server authorization.</div>';
+    if (auth.pinEnabled) {
+      html += '<div class="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">' +
+        '<input id="updateAuthPin" class="input" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter Update Mode PIN"/>' +
+        '<button data-action="unlock-update" class="btn btn-primary">' + icon('shield', 14) + ' Unlock</button></div>';
+    } else if (!auth.configured) {
+      html += '<div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px]">Administrator setup required: configure staff emails/domains or a hashed PIN in Apps Script Script Properties.</div>';
+    } else {
+      html += '<div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px]">This Google account is not authorised for Update Mode. Ask an administrator to update access settings.</div>';
+    }
+    return html + '</div></div>';
   }
 
   function renderContextStrip(loc, room) {
@@ -719,7 +933,7 @@
     }
     if (item.hazard) html += '<div class="mt-2 rounded-lg bg-red-50 border border-red-100 px-2.5 py-1.5 text-[11.5px] text-red-800 flex gap-1.5">' + icon('shield', 13, 'shrink-0 mt-0.5') + '<span>' + esc(item.safetyNote || 'Handle per D&T chemical storage and safety procedures.') + '</span></div>';
     html += '</div>';
-    if (route.mode === 'tech') html += renderTechControls(item);
+    if (route.mode === 'tech' && isUpdateUnlocked()) html += renderTechControls(item);
     else html += '<div class="expected-box shrink-0 text-right rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 min-w-[78px]"><div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Expected</div><div class="font-display text-[24px] font-semibold leading-none mt-0.5 text-slate-900">' + esc(item.qty) + '</div>' + (item.unit ? '<div class="text-[10.5px] text-slate-500 mt-0.5">' + esc(item.unit) + '</div>' : '') + '<div class="mt-1.5 flex justify-end">' + statusPill(item.status) + '</div></div>';
     html += '</div></article>';
     if (item.changed) html += '<div class="px-3 pb-2 -mt-1 text-[11px] text-amber-800 flex items-center gap-1.5">' + icon('edit', 11) + ' Changed - ' + esc(item._orig.qty) + ' -> ' + esc(item.qty) + (item.status !== item._orig.status ? ' - ' + esc(item._orig.status) + ' -> ' + esc(item.status) : '') + '</div>';
@@ -882,7 +1096,7 @@
       var qr = loc.qrImageUrl ? '<img src="' + esc(loc.qrImageUrl) + '" alt="QR code" width="72" height="72"/>' : '<div class="qr-glyph w-full h-full"></div>';
       var singlePrintAction = '<div class="label-single-actions"><button data-action="label-print-one" data-label-key="' + esc(loc.key || routeId || loc.label) + '" class="btn btn-primary py-2 px-3 text-[12px]">' + icon('printer', 14) + ' Print this label</button></div>';
       if (brotherActive) {
-        html += '<div class="qr-label brother-ql-label ' + (loc.hazard ? 'is-hazard' : '') + '"><div class="brother-label-body">' +
+        html += '<div class="label-preview-item"><div class="qr-label brother-ql-label ' + (loc.hazard ? 'is-hazard' : '') + '"><div class="brother-label-body">' +
           '<div class="brother-label-copy"><div class="brother-label-brand">VSA / D&amp;T INVENTORY</div>' +
           '<div class="brother-label-room">Room ' + esc(loc.room) + '</div>' +
           '<div class="brother-label-code">' + esc(routeId || loc.label) + '</div>' +
@@ -891,7 +1105,7 @@
           '<div class="brother-label-scan">Scan to view inventory</div>' +
           (loc.hazard ? '<div class="brother-label-hazard">HAZARD STORAGE - CHECK SAFETY FIRST</div>' : '') +
           '</div><div class="brother-label-qr">' + qr + '</div></div>' +
-          '<div class="brother-label-url">View: ' + esc(viewUrl) + '</div>' + singlePrintAction + '</div>';
+          '<div class="brother-label-url">View: ' + esc(viewUrl) + '</div></div>' + singlePrintAction + '</div>';
       } else {
         html += '<div class="qr-label"><div class="bg-white border border-slate-900 p-1.5 shrink-0" style="width:86px;height:86px">' + qr + '</div>' +
           '<div class="min-w-0 flex-1"><div class="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">VSA D&amp;T - ' + esc(loc.room) + '</div><div class="font-display text-[14px] font-semibold text-slate-900 truncate mt-0.5">' + esc(loc.label) + '</div><div class="text-[11px] text-slate-500 truncate">' + esc(loc.specific || '') + '</div>' + (routeId ? '<div class="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-900 text-white text-[10px] font-mono rounded">' + esc(routeId) + '</div>' : '') + (loc.hazard ? '<div class="mt-1 text-[10px] font-semibold text-red-700">HAZARD STORAGE - CHECK SAFETY FIRST</div>' : '') + '<div class="mt-1.5">' + (loc.qrReady ? '<span class="pill pill-good">View QR ready</span>' : '<span class="pill pill-low">QR link missing</span>') + '</div><div class="text-[10px] text-slate-500 mt-1.5 truncate">View: ' + esc(viewUrl) + '</div><div class="text-[10px] text-slate-500 truncate">Update: ' + esc(updateUrlText) + '</div>' + singlePrintAction + '</div></div>';
@@ -999,6 +1213,7 @@
     } else {
       html += '<div class="space-y-2">';
       rows.forEach(function (row) {
+        var purchaseHref = safeExternalUrl(row.purchaseLink);
         html += '<article class="card rounded-2xl p-3.5 ' + (row.hazard ? 'border-red-200' : '') + '"><div class="flex items-start justify-between gap-3"><div class="min-w-0 flex-1">' +
           '<div class="flex items-center gap-1.5 flex-wrap"><h3 class="font-display text-[14.5px] font-semibold text-slate-900">' + esc(row.name) + '</h3>' + (row.hazard ? hazardPill() : '') + '<span class="pill ' + (row.priority === 'High' ? 'pill-miss' : 'pill-low') + '">' + esc(row.priority) + '</span></div>' +
           '<div class="text-[11.5px] text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5"><span class="font-mono">' + esc(row.id) + '</span><span>- ' + esc(row.room || '-') + ' / ' + esc(row.storageLabel || '-') + '</span></div>' +
@@ -1006,7 +1221,7 @@
           '<div class="rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-1.5"><div class="text-slate-500">Reorder at</div><div class="font-mono font-semibold text-slate-900">' + esc(row.reorderLevel || '-') + '</div></div>' +
           (row.supplier ? '<div class="rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-1.5 col-span-2"><div class="text-slate-500">Supplier</div><div class="font-medium text-slate-800">' + esc(row.supplier) + (row.assetValue ? ' - ' + esc(row.assetValue) : '') + '</div></div>' : '') +
           '</div>' +
-          (row.purchaseLink ? '<a href="' + esc(row.purchaseLink) + '" target="_blank" rel="noopener" class="mt-2.5 inline-flex items-center gap-1.5 text-[12px] font-semibold text-blue-700 hover:underline">' + icon('external', 12) + 'Open purchase link</a>' : '') +
+          (purchaseHref ? '<a href="' + esc(purchaseHref) + '" target="_blank" rel="noopener noreferrer" class="mt-2.5 inline-flex items-center gap-1.5 text-[12px] font-semibold text-blue-700 hover:underline">' + icon('external', 12) + 'Open purchase link</a>' : (row.purchaseLink ? '<span class="mt-2.5 inline-flex items-center gap-1.5 text-[12px] font-semibold text-amber-700">' + icon('warn', 12) + 'Purchase link blocked: unsupported URL</span>' : '')) +
           '</div><div class="shrink-0">' + statusPill(row.status) + '</div></div></article>';
       });
       html += '</div>';
@@ -1050,11 +1265,12 @@
     } else {
       html += '<div class="space-y-2">';
       chems.forEach(function (item) {
+        var sdsHref = safeExternalUrl(item.sdsLink);
         html += '<article class="card rounded-2xl p-3.5 border-red-200"><div class="flex items-start justify-between gap-3"><div class="min-w-0 flex-1">' +
           '<div class="flex items-center gap-1.5 flex-wrap"><h3 class="font-display text-[14.5px] font-semibold text-slate-900">' + esc(item.name) + '</h3>' + hazardPill() + '</div>' +
           '<div class="text-[11.5px] text-slate-500 mt-1"><span class="font-mono">' + esc(item.id) + '</span> - ' + esc(item.room || '-') + ' / ' + esc(item.storageLabel || '-') + '</div>' +
           (item.safetyNote ? '<div class="mt-2 rounded-lg bg-red-50 border border-red-100 px-2.5 py-1.5 text-[11.5px] text-red-800 flex gap-1.5">' + icon('shield', 13, 'shrink-0 mt-0.5') + '<span>' + esc(item.safetyNote) + '</span></div>' : '') +
-          '<div class="mt-2 flex flex-wrap gap-1.5 items-center">' + statusPill(item.status) + (item.sdsLink ? '<a class="pill pill-blue hover:underline" target="_blank" rel="noopener" href="' + esc(item.sdsLink) + '">' + icon('external', 10) + 'SDS</a>' : '<span class="pill pill-low">SDS missing</span>') + '</div>' +
+          '<div class="mt-2 flex flex-wrap gap-1.5 items-center">' + statusPill(item.status) + (sdsHref ? '<a class="pill pill-blue hover:underline" target="_blank" rel="noopener noreferrer" href="' + esc(sdsHref) + '">' + icon('external', 10) + 'SDS</a>' : (item.sdsLink ? '<span class="pill pill-low">SDS link blocked</span>' : '<span class="pill pill-low">SDS missing</span>')) + '</div>' +
           '</div></div></article>';
       });
       html += '</div>';
@@ -1073,31 +1289,112 @@
     return '<div class="topbar px-2 py-2 bg-white border-b border-slate-200 flex items-center gap-1 sticky top-0 z-10"><button data-action="back" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-700">' + icon('arrow-left', 20) + '</button><div class="topbar-title flex-1 text-[13.5px] font-semibold text-slate-900 truncate">' + esc(title) + '</div><button data-action="open-scanner" class="tap rounded-lg hover:bg-blue-50 flex items-center justify-center text-blue-700" title="Scan QR">' + icon('scan', 18) + '</button>' + (right || '') + '</div>';
   }
 
+  function renderScannerDiagnostics() {
+    var diag = scannerState.diagnostics || collectScannerDiagnostics();
+    var rows = [
+      ['Secure context', diag.secureContext ? 'yes' : 'no'],
+      ['Apps Script frame', diag.framed ? 'yes' : 'no'],
+      ['mediaDevices', diag.mediaDevices ? 'available' : 'missing'],
+      ['getUserMedia', diag.getUserMedia ? 'available' : 'missing'],
+      ['camera permission', scannerState.permissionState || diag.permissionState || 'not checked'],
+      ['platform', diag.platform || '-'],
+      ['user agent', diag.userAgent || '-']
+    ];
+    if (scannerState.lastCameraError) rows.splice(4, 0, ['last camera error', scannerState.lastCameraError]);
+    return '<details class="scanner-diagnostics"><summary>Camera diagnostics</summary>' +
+      '<div class="scanner-diagnostics-grid">' + rows.map(function (row) {
+        return '<div><strong>' + esc(row[0]) + '</strong><span>' + esc(row[1]) + '</span></div>';
+      }).join('') + '</div></details>';
+  }
+
+  function renderScannerRoomOptions() {
+    var rooms = (appData.rooms || []).map(function (room) { return room.code; }).filter(Boolean);
+    if (rooms.indexOf('419A') === -1) rooms.unshift('419A');
+    var selected = scannerState.manualRoom || (route.loc && route.loc.room) || '419A';
+    var html = '<option value="">Choose room...</option>';
+    rooms.forEach(function (room) {
+      html += '<option value="' + esc(room) + '"' + (room === selected ? ' selected' : '') + '>' + esc(room) + '</option>';
+    });
+    return html;
+  }
+
+  function collectScannerDiagnostics() {
+    var nav = window.navigator || {};
+    return {
+      secureContext: !!window.isSecureContext,
+      framed: isFramedApp(),
+      mediaDevices: !!nav.mediaDevices,
+      getUserMedia: !!(nav.mediaDevices && nav.mediaDevices.getUserMedia),
+      permissionState: scannerState.permissionState || '',
+      platform: nav.platform || '',
+      userAgent: nav.userAgent || ''
+    };
+  }
+
+  function refreshCameraPermissionState() {
+    scannerState.diagnostics = collectScannerDiagnostics();
+    if (!(navigator.permissions && navigator.permissions.query)) {
+      scannerState.permissionState = 'unsupported';
+      return;
+    }
+    try {
+      navigator.permissions.query({ name: 'camera' }).then(function (status) {
+        scannerState.permissionState = status && status.state ? status.state : 'unknown';
+        scannerState.diagnostics = collectScannerDiagnostics();
+        updateScannerStatus();
+        var details = root && root.querySelector('.scanner-diagnostics');
+        if (details) {
+          details.outerHTML = renderScannerDiagnostics();
+        }
+      }).catch(function (err) {
+        scannerState.permissionState = 'unavailable' + (err && err.name ? ' (' + err.name + ')' : '');
+      });
+    } catch (err) {
+      scannerState.permissionState = 'unavailable' + (err && err.name ? ' (' + err.name + ')' : '');
+    }
+  }
+
   function renderScannerOverlay() {
+    var framed = isFramedApp();
+    var externalScanner = !!configuredExternalScannerUrl();
     var suggestions = (scannerState.suggestions || []).map(function (loc) {
       return '<button data-action="scanner-suggestion" data-location-key="' + esc(loc.key) + '" class="scanner-suggestion">' +
         '<strong>' + esc(routeIdentity(loc) || loc.label) + '</strong><span>' + esc(loc.room + ' - ' + loc.label) + '</span></button>';
     }).join('');
     var cameraOverlay = scannerState.stream ? '' :
-      '<div class="scanner-camera-prompt"><div class="scanner-camera-title">Camera is off</div>' +
-      '<div class="scanner-camera-copy">Tap Start camera and allow camera access when your phone asks.</div>' +
-      '<button data-action="scanner-start-camera" class="scanner-camera-start">' + icon('scan', 18) + ' Start camera</button></div>';
+      '<div class="scanner-camera-prompt"><div class="scanner-camera-title">QR scanner</div>' +
+      '<div class="scanner-camera-copy">' + (externalScanner ? 'For reliable camera access, open the standalone HTTPS scanner. It scans the QR and returns to this inventory app in View Mode.' : (framed ? 'This scanner is inside the Apps Script frame, which can block camera permission. Open the full-screen scanner first, then allow camera access there.' : 'This full-screen scanner can request camera access directly. Tap Start camera and allow permission.')) + '</div>' +
+      ((framed || externalScanner) ? '<button data-action="scanner-open-standalone" class="scanner-camera-start is-fullscreen">' + icon('external', 18) + (externalScanner ? ' Open camera scanner' : ' Open full-screen camera scanner') + '</button>' : '') +
+      '<button data-action="scanner-start-camera" class="scanner-camera-start' + (framed ? ' is-secondary' : '') + '">' + icon('scan', 18) + (framed ? ' Try camera here' : ' Start camera') + '</button>' +
+      '<label class="scanner-camera-upload">' + icon('scan', 18) + ' Take QR photo<input id="scannerCameraInput" type="file" accept="image/*" capture="environment"/></label></div>';
+    var standaloneHelp = scannerState.standaloneUrl ?
+      '<div class="scanner-standalone-link">If the new tab did not open, use this link:<a href="' + esc(scannerState.standaloneUrl) + '" target="_blank" rel="noopener noreferrer">Open full-screen scanner</a><span>' + esc(scannerState.standaloneUrl) + '</span></div>' : '';
     return '<div class="scanner-overlay" role="dialog" aria-modal="true" aria-label="QR scanner">' +
       '<div class="scanner-sheet">' +
       '<div class="scanner-header"><div><div class="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-blue-700">D&amp;T Inventory</div><h2 class="font-display text-[18px] font-semibold text-slate-900">Scan storage QR</h2></div><button data-action="close-scanner" class="tap rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">' + icon('minus', 18) + '</button></div>' +
       '<div class="scanner-camera"><video id="scannerVideo" autoplay muted playsinline></video><canvas id="scannerCanvas" class="hidden"></canvas><div class="scanner-reticle"></div>' + cameraOverlay + '</div>' +
-      '<div class="scanner-status ' + (scannerState.error ? 'is-error' : '') + '">' + (scannerState.error ? icon('warn', 14) + esc(scannerState.error) : icon('scan', 14) + esc(scannerState.message || 'Point the camera at a D&T storage label. QR opens View Mode by default.')) + '</div>' +
-      '<div class="scanner-fallback"><label>Enter Location Code or paste QR URL<input id="scannerManualInput" class="input mt-1" value="' + esc(scannerState.manual || '') + '" placeholder="419A-FCU-01 or /exec?room=419A&amp;loc=..."/></label>' +
+      '<div class="scanner-status ' + (scannerState.error ? 'is-error' : '') + '">' + (scannerState.error ? icon('warn', 14) + esc(scannerState.error) : icon('scan', 14) + esc(scannerState.message || 'Take a QR photo, paste a QR URL, or enter room/location. QR opens View Mode by default.')) + '</div>' +
+      standaloneHelp +
+      '<div class="scanner-native-tip">' + icon('info', 15) + '<span>If the in-app camera is blocked, use the phone Camera app to scan the printed QR label and open the /exec link directly. You can also paste the QR URL or enter room/location below.</span></div>' +
+      '<div class="scanner-fallback"><label>Paste QR URL or enter Location Code<input id="scannerManualInput" class="input mt-1" value="' + esc(scannerState.manual || '') + '" placeholder="419A-FCU-01 or /exec?room=419A&amp;loc=..."/></label>' +
+      '<div class="scanner-manual-grid mt-2"><label>Room<select id="scannerRoomInput" class="select mt-1">' + renderScannerRoomOptions() + '</select></label><label>Location / storage code<input id="scannerLocationInput" class="input mt-1" value="' + esc(scannerState.manualLoc || '') + '" placeholder="419A-FCU-01"/></label></div>' +
       '<div class="grid grid-cols-2 gap-2 mt-2"><button data-action="scanner-open-view" class="btn btn-primary">' + icon('search', 14) + ' Open View</button><button data-action="scanner-open-update" class="btn btn-secondary">' + icon('edit', 14) + ' Open Update</button></div>' +
+      '<label class="scanner-upload">Upload QR image / screenshot<input id="scannerImageInput" type="file" accept="image/*" capture="environment"/></label>' +
+      (scannerState.imageDecodeMessage ? '<div class="scanner-image-message">' + esc(scannerState.imageDecodeMessage) + '</div>' : '') +
       '<div class="scanner-suggestions">' + (suggestions ? '<div class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.14em]">Suggestions</div>' + suggestions : '') + '</div>' +
+      renderScannerDiagnostics() +
       '</div></div></div>';
   }
 
   function openScanner() {
     scannerState.open = true;
     scannerState.error = '';
-    scannerState.message = 'Tap Start camera to scan, or enter a Location Code below.';
+    scannerState.message = 'Take a QR photo, paste a QR URL, or enter room/location below.';
     scannerState.suggestions = [];
+    scannerState.imageDecodeMessage = '';
+    scannerState.standaloneUrl = '';
+    scannerState.diagnostics = collectScannerDiagnostics();
+    refreshCameraPermissionState();
     render();
   }
 
@@ -1120,19 +1417,25 @@
     scannerState.error = '';
     scannerState.message = '';
     scannerState.suggestions = [];
+    scannerState.imageDecodeMessage = '';
     scannerState.cameraRequested = false;
+    scannerState.standaloneUrl = '';
   }
 
   function startScanner() {
     if (scannerState.starting || scannerState.stream) return;
+    scannerState.diagnostics = collectScannerDiagnostics();
+    refreshCameraPermissionState();
     var video = document.getElementById('scannerVideo');
     if (!video || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
-      scannerState.error = 'Camera unavailable in this browser. Open the app in Safari/Chrome, or enter a Location Code below.';
+      scannerState.lastCameraError = 'mediaDevices/getUserMedia unavailable';
+      scannerState.error = 'Camera scanning is blocked in this browser or Apps Script frame. You can still open QR labels directly, paste a QR URL, or enter the room/location manually.';
       updateScannerStatus();
       return;
     }
     if (!window.isSecureContext) {
-      scannerState.error = 'Camera requires HTTPS. Open the deployed /exec link directly, or enter a Location Code below.';
+      scannerState.lastCameraError = 'insecure context';
+      scannerState.error = 'Camera requires a secure HTTPS page. Open the deployed /exec link directly, paste the QR URL, or enter room/location manually.';
       updateScannerStatus();
       return;
     }
@@ -1159,13 +1462,20 @@
       .catch(function (err) {
         scannerState.starting = false;
         var name = err && err.name ? err.name : '';
+        var message = err && err.message ? err.message : '';
+        scannerState.lastCameraError = (name || 'CameraError') + (message ? ': ' + message : '');
         if (name === 'NotAllowedError' || name === 'SecurityError') {
-          scannerState.error = 'Camera access is blocked. Allow camera permission for this site, or open the /exec link directly in Safari/Chrome. You can still enter a Location Code below.';
+          scannerState.error = 'Camera scanning is blocked in this browser or Apps Script frame. You can still open QR labels directly, paste a QR URL, or enter the room/location manually.';
         } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
           scannerState.error = 'No camera was found on this device. Enter a Location Code or paste a QR URL below.';
+        } else if (name === 'NotReadableError') {
+          scannerState.error = 'The camera is already in use or could not be read. Close other camera apps, paste the QR URL, or enter room/location manually.';
+        } else if (name === 'OverconstrainedError') {
+          scannerState.error = 'This browser could not match the requested camera settings. Try the native Camera app, paste the QR URL, or enter room/location manually.';
         } else {
-          scannerState.error = 'Camera could not start on this browser. Try Safari/Chrome, or enter a Location Code below.';
+          scannerState.error = 'Camera could not start here. This can happen inside the Apps Script frame. Paste a QR URL, enter room/location, or scan the printed label with the phone Camera app.';
         }
+        scannerState.diagnostics = collectScannerDiagnostics();
         updateScannerStatus();
       });
   }
@@ -1236,11 +1546,72 @@
     document.head.appendChild(script);
   }
 
+  function handleScannerImageUpload(file) {
+    if (!file) return;
+    scannerState.imageDecodeMessage = 'Reading QR image...';
+    updateScannerImageMessage();
+    ensureJsQr(function () {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var image = new Image();
+        image.onload = function () {
+          try {
+            var canvas = document.createElement('canvas');
+            var max = 1400;
+            var scale = Math.min(1, max / Math.max(image.width, image.height));
+            canvas.width = Math.max(1, Math.round(image.width * scale));
+            canvas.height = Math.max(1, Math.round(image.height * scale));
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+            var data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            var code = window.jsQR(data.data, data.width, data.height);
+            if (code && code.data) {
+              scannerState.imageDecodeMessage = 'QR image decoded. Opening View Mode...';
+              updateScannerImageMessage();
+              handleScanText(code.data);
+              return;
+            }
+            scannerState.imageDecodeMessage = 'No QR code found in that image. Try a clearer screenshot or paste the QR URL.';
+            updateScannerImageMessage();
+          } catch (err) {
+            scannerState.imageDecodeMessage = 'Could not decode that QR image. Paste the QR URL or enter room/location manually.';
+            updateScannerImageMessage();
+          }
+        };
+        image.onerror = function () {
+          scannerState.imageDecodeMessage = 'Could not read that image file.';
+          updateScannerImageMessage();
+        };
+        image.src = reader.result;
+      };
+      reader.onerror = function () {
+        scannerState.imageDecodeMessage = 'Could not read that image file.';
+        updateScannerImageMessage();
+      };
+      reader.readAsDataURL(file);
+    }, function () {
+      scannerState.imageDecodeMessage = 'QR image upload needs the jsQR decoder, but it could not load. Paste the QR URL instead.';
+      updateScannerImageMessage();
+    });
+  }
+
+  function updateScannerImageMessage() {
+    var el = root && root.querySelector('.scanner-image-message');
+    if (el) {
+      el.textContent = scannerState.imageDecodeMessage || '';
+      return;
+    }
+    var upload = root && root.querySelector('.scanner-upload');
+    if (upload && scannerState.imageDecodeMessage) {
+      upload.insertAdjacentHTML('afterend', '<div class="scanner-image-message">' + esc(scannerState.imageDecodeMessage) + '</div>');
+    }
+  }
+
   function handleScanText(text) {
     var resolved = resolveScanInput(text);
     if (!resolved.loc) {
       scannerState.manual = textValue(text);
-      scannerState.error = 'QR was read, but no matching storage was found. Check the code below.';
+      scannerState.error = resolved.error || 'QR was read, but no matching storage was found. Check the code below.';
       scannerState.suggestions = findScanSuggestions(text);
       render();
       return;
@@ -1254,40 +1625,99 @@
 
   function openManualScan(mode) {
     var input = document.getElementById('scannerManualInput');
+    var roomInput = document.getElementById('scannerRoomInput');
+    var locInput = document.getElementById('scannerLocationInput');
     var raw = textValue(input && input.value);
+    var manualRoom = textValue(roomInput && roomInput.value);
+    var manualLoc = textValue(locInput && locInput.value);
     scannerState.manual = raw;
-    var resolved = resolveScanInput(raw);
+    scannerState.manualRoom = manualRoom;
+    scannerState.manualLoc = manualLoc;
+    var resolved = resolveScanInput(raw || (manualRoom && manualLoc ? manualRoom + ' ' + manualLoc : ''), manualRoom, manualLoc);
     if (!resolved.loc) {
-      scannerState.error = raw ? 'No matching storage. Choose a suggestion or check the Location Code.' : 'Enter a Location Code or paste a QR URL.';
-      scannerState.suggestions = findScanSuggestions(raw);
+      scannerState.error = resolved.error || (raw || manualLoc ? 'No matching storage. Choose a suggestion or check the Location Code.' : 'Enter a Location Code, room/location, or paste a QR URL.');
+      scannerState.suggestions = findScanSuggestions(raw || manualLoc || manualRoom);
       render();
       return;
     }
-    goLocation(resolved.loc, mode === 'tech' ? 'tech' : 'view');
+    navigateToStorageRoute(resolved.loc.room, routeIdentity(resolved.loc), { mode: mode === 'tech' ? 'tech' : 'view' });
   }
 
-  function resolveScanInput(raw) {
+  function resolveScanInput(raw, manualRoom, manualLoc) {
     var text = textValue(raw);
-    if (!text) return { loc: null };
-    var room = '';
-    var loc = '';
-    try {
-      var parsed = new URL(text, window.location.href);
-      room = parsed.searchParams.get('room') || '';
-      loc = parsed.searchParams.get('loc') || '';
-    } catch (err) {
-      if (text.indexOf('room=') !== -1 || text.indexOf('loc=') !== -1) {
-        var q = text.charAt(0) === '?' ? text.slice(1) : text;
-        var params = new URLSearchParams(q);
-        room = params.get('room') || '';
-        loc = params.get('loc') || '';
-      }
+    if (manualRoom && manualLoc) {
+      return { loc: findLocationByRoomLoc(manualRoom, manualLoc), error: 'No matching storage for that room/location.' };
     }
-    if (room && loc) return { loc: findLocationByRoomLoc(room, loc) };
+    if (!text) return { loc: null };
+    var parsedRoute = parseInventoryQrUrl(text);
+    if (parsedRoute.error) return { loc: null, error: parsedRoute.error };
+    if (parsedRoute.room && parsedRoute.loc) {
+      return {
+        loc: findLocationByRoomLoc(parsedRoute.room, parsedRoute.loc),
+        error: 'QR URL is valid, but no matching storage exists in the current Inventory data.'
+      };
+    }
     var exact = findLocationByAnyIdentity(text);
     if (exact) return { loc: exact };
     var suggestions = findScanSuggestions(text);
     return { loc: suggestions.length === 1 ? suggestions[0] : null };
+  }
+
+  function parseInventoryQrUrl(input) {
+    var text = textValue(input);
+    if (!text) return { room: '', loc: '', modeStripped: false, error: '' };
+    var params = null;
+    var parsed = null;
+    var relative = false;
+    if (/^[?]/.test(text)) {
+      params = new URLSearchParams(text.slice(1));
+      relative = true;
+    } else if (/^(room|loc|mode)=/i.test(text)) {
+      params = new URLSearchParams(text);
+      relative = true;
+    } else if (/^\/?exec\?/i.test(text)) {
+      var rel = text.charAt(0) === '/' ? text : '/' + text;
+      parsed = new URL(rel, textValue(BOOT.webAppBaseUrl) || 'https://inventory.local');
+      params = parsed.searchParams;
+      relative = true;
+    } else if (hasUrlScheme(text) || /^\/\//.test(text)) {
+      if (/^\/\//.test(text)) {
+        return { room: '', loc: '', modeStripped: false, error: "Protocol-relative QR URLs are not allowed. Paste this app's /exec link or enter room/location manually." };
+      }
+      try {
+        parsed = new URL(text);
+      } catch (err) {
+        return { room: '', loc: '', modeStripped: false, error: 'QR URL is malformed. Paste the full /exec link or enter the Location Code manually.' };
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { room: '', loc: '', modeStripped: false, error: 'Unsupported QR URL scheme. Only http and https QR links are allowed.' };
+      }
+      if (!isAllowedInventoryUrl(parsed)) {
+        return { room: '', loc: '', modeStripped: false, error: 'This QR URL is not from this D&T Inventory deployment. Enter the Location Code manually if needed.' };
+      }
+      params = parsed.searchParams;
+    }
+    if (!params) return { room: '', loc: '', modeStripped: false, error: '' };
+    var clean = stripUnsafeMode(params);
+    var room = clean.room;
+    var loc = clean.loc;
+    var modeStripped = clean.modeStripped;
+    if (!room || !loc) {
+      return { room: '', loc: '', modeStripped: modeStripped, error: relative ? 'QR route is missing room or location.' : '' };
+    }
+    return { room: room, loc: loc, modeStripped: modeStripped, error: '' };
+  }
+
+  function navigateToStorageRoute(room, locText, options) {
+    var loc = findLocationByRoomLoc(room, locText);
+    if (!loc) {
+      scannerState.error = 'No matching storage for ' + room + ' / ' + locText + '.';
+      scannerState.suggestions = findScanSuggestions(locText || room);
+      render();
+      return false;
+    }
+    goLocation(loc, options && options.mode === 'tech' ? 'tech' : 'view');
+    return true;
   }
 
   function normScan(value) {
@@ -1380,6 +1810,33 @@
         wrap.querySelectorAll('[data-action="scanner-suggestion"]').forEach(function (el) { el.addEventListener('click', handleAction); });
       }
     });
+    var scannerRoomInput = document.getElementById('scannerRoomInput');
+    if (scannerRoomInput) scannerRoomInput.addEventListener('change', function () {
+      scannerState.manualRoom = scannerRoomInput.value;
+    });
+    var scannerLocationInput = document.getElementById('scannerLocationInput');
+    if (scannerLocationInput) scannerLocationInput.addEventListener('input', function () {
+      scannerState.manualLoc = scannerLocationInput.value;
+      scannerState.suggestions = findScanSuggestions(scannerLocationInput.value);
+      var wrap = root.querySelector('.scanner-suggestions');
+      if (wrap) {
+        var suggestions = scannerState.suggestions.map(function (loc) {
+          return '<button data-action="scanner-suggestion" data-location-key="' + esc(loc.key) + '" class="scanner-suggestion"><strong>' + esc(routeIdentity(loc) || loc.label) + '</strong><span>' + esc(loc.room + ' - ' + loc.label) + '</span></button>';
+        }).join('');
+        wrap.innerHTML = suggestions ? '<div class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.14em]">Suggestions</div>' + suggestions : '';
+        wrap.querySelectorAll('[data-action="scanner-suggestion"]').forEach(function (el) { el.addEventListener('click', handleAction); });
+      }
+    });
+    var scannerImageInput = document.getElementById('scannerImageInput');
+    if (scannerImageInput) scannerImageInput.addEventListener('change', function () {
+      handleScannerImageUpload(scannerImageInput.files && scannerImageInput.files[0]);
+      scannerImageInput.value = '';
+    });
+    var scannerCameraInput = document.getElementById('scannerCameraInput');
+    if (scannerCameraInput) scannerCameraInput.addEventListener('change', function () {
+      handleScannerImageUpload(scannerCameraInput.files && scannerCameraInput.files[0]);
+      scannerCameraInput.value = '';
+    });
     root.querySelectorAll('[data-action="qty"]').forEach(function (input) {
       input.addEventListener('input', function () {
         var raw = input.value;
@@ -1400,6 +1857,8 @@
     var action = el.getAttribute('data-action');
     if (action === 'open-scanner') {
       openScanner();
+    } else if (action === 'scanner-open-standalone') {
+      openStandaloneScanner();
     } else if (action === 'scanner-start-camera') {
       startScanner();
     } else if (action === 'close-scanner') {
@@ -1452,7 +1911,14 @@
     }
     else if (action === 'back') goLanding();
     else if (action === 'toggle-mode') toggleMode();
+    else if (action === 'unlock-update') authorizeUpdateModeClient();
     else if (action === 'open-add-item') {
+      if (!isUpdateUnlocked()) {
+        saveState = 'error';
+        saveError = 'Unlock Update Mode before adding items.';
+        render();
+        return;
+      }
       addFormOpen = true;
       render();
     } else if (action === 'cancel-add-item') {
@@ -1476,6 +1942,52 @@
     }
   }
 
+  function authorizeUpdateModeClient() {
+    if (!(window.google && google.script && google.script.run)) {
+      saveState = 'error';
+      saveError = 'Update unlock is available only from the deployed Apps Script /exec URL.';
+      render();
+      return;
+    }
+    var pinInput = document.getElementById('updateAuthPin');
+    var pin = textValue(pinInput && pinInput.value);
+    saveState = 'saving';
+    saveError = '';
+    saveMessage = '';
+    render();
+    google.script.run
+      .withSuccessHandler(function (res) {
+        updateAuthToken = textValue(res && res.token);
+        writeSessionValue(UPDATE_AUTH_STORAGE_KEY, updateAuthToken);
+        if (res && res.updateAuth) BOOT.updateAuth = res.updateAuth;
+        saveState = 'saved';
+        saveMessage = (res && res.message) || 'Update Mode unlocked.';
+        render();
+      })
+      .withFailureHandler(function (err) {
+        updateAuthToken = '';
+        writeSessionValue(UPDATE_AUTH_STORAGE_KEY, '');
+        saveState = 'error';
+        saveError = (err && err.message) || 'Update unlock failed.';
+        render();
+      })
+      .authorizeUpdateMode(pin);
+  }
+
+  function expectedItemIdentity(item) {
+    return {
+      itemId: item && item.id,
+      itemName: item && item.name,
+      category: item && item.category,
+      expectedQty: item && item._orig ? item._orig.qty : item && item.qty,
+      expectedStatus: item && item._orig ? item._orig.status : item && item.status,
+      specificLocation: item && item.specificLocation,
+      storageId: item && item.storageId,
+      storageLabel: item && item.storageLabel,
+      locationCode: item && item.locationCode
+    };
+  }
+
   function mapServerItem(r) {
     return {
       sheetRow: r.sheetRow,
@@ -1493,6 +2005,10 @@
       assetValue: r.assetValue,
       maintenanceDue: r.maintenanceDue,
       sdsLink: r.sdsLink,
+      specificLocation: r.specificLocation,
+      storageId: r.storageId,
+      storageLabel: r.storageLabel,
+      locationCode: r.locationCode,
       hazard: r.isHazard,
       _orig: { qty: r.qty, status: r.status },
       changed: false
@@ -1547,6 +2063,12 @@
   }
 
   function saveUpdates() {
+    if (!isUpdateUnlocked()) {
+      saveState = 'error';
+      saveError = 'Unlock Update Mode before saving live inventory changes.';
+      render();
+      return;
+    }
     if (!(window.google && google.script && google.script.run)) {
       saveState = 'error';
       saveError = 'Save bridge unavailable. Open the deployed /exec URL to save.';
@@ -1554,7 +2076,11 @@
       return;
     }
     var updates = localItems.filter(function (item) { return item.changed; }).map(function (item) {
-      return { sheetRow: item.sheetRow, qty: item.qty, status: item.status };
+      return Object.assign({
+        sheetRow: item.sheetRow,
+        qty: item.qty,
+        status: item.status
+      }, expectedItemIdentity(item));
     });
     if (!updates.length) return;
     var invalid = updates.filter(function (item) {
@@ -1581,10 +2107,16 @@
         saveError = (err && err.message) || 'Save failed. Check values and retry.';
         render();
       })
-      .saveInventoryUpdates({ room: route.loc.room, loc: route.loc.routeLoc || route.loc.id, updates: updates });
+      .saveInventoryUpdates(Object.assign({ room: route.loc.room, loc: route.loc.routeLoc || route.loc.id, updates: updates }, updateAuthPayload()));
   }
 
   function addInventoryItem() {
+    if (!isUpdateUnlocked()) {
+      saveState = 'error';
+      saveError = 'Unlock Update Mode before adding items.';
+      render();
+      return;
+    }
     if (!(window.google && google.script && google.script.run)) {
       saveState = 'error';
       saveError = 'Save bridge unavailable. Open the deployed /exec URL to add items.';
@@ -1632,10 +2164,16 @@
         saveError = (err && err.message) || 'Add item failed. Check the fields and retry.';
         render();
       })
-      .addInventoryItemToLocation({ room: route.loc.room, loc: route.loc.routeLoc || route.loc.id, item: item });
+      .addInventoryItemToLocation(Object.assign({ room: route.loc.room, loc: route.loc.routeLoc || route.loc.id, item: item }, updateAuthPayload()));
   }
 
   function removeInventoryItem(row) {
+    if (!isUpdateUnlocked()) {
+      saveState = 'error';
+      saveError = 'Unlock Update Mode before removing items.';
+      render();
+      return;
+    }
     var item = findLocalItem(row);
     if (!item) return;
     var storageText = [
@@ -1679,11 +2217,22 @@
         saveError = (err && err.message) || 'Remove item failed. Refresh and retry.';
         render();
       })
-      .removeInventoryItemFromLocation({ room: route.loc.room, loc: route.loc.routeLoc || route.loc.id, sheetRow: Number(row) });
+      .removeInventoryItemFromLocation(Object.assign({ room: route.loc.room, loc: route.loc.routeLoc || route.loc.id, sheetRow: Number(row) }, expectedItemIdentity(item), updateAuthPayload()));
   }
 
   try {
+    if (shouldAutoOpenScanner()) {
+      scannerState.open = true;
+      scannerState.error = '';
+      scannerState.message = isFramedApp()
+        ? 'This scanner is still inside an Apps Script frame. Use Open full-screen camera scanner, then tap Start camera.'
+        : 'Full-screen scanner is ready. Tap Start camera and allow camera permission.';
+      scannerState.suggestions = [];
+      scannerState.imageDecodeMessage = '';
+      scannerState.diagnostics = collectScannerDiagnostics();
+    }
     render();
+    if (scannerState.open) refreshCameraPermissionState();
   } catch (err) {
     if (root) {
       root.innerHTML = '<div class="app-shell"><div class="px-4 py-6"><div class="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900"><div class="font-semibold">App failed to render</div><div class="mt-1 text-sm">' + esc(err && err.message ? err.message : err) + '</div></div></div></div>';

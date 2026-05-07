@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>D&T Inventory Camera Scanner</title>
+  <style>
+    :root {
+      --bg: #eef6fb;
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #dbe7f3;
+      --blue: #2563eb;
+      --blue-dark: #1d4ed8;
+      --amber-bg: #fff7ed;
+      --amber: #9a3412;
+      --red-bg: #fef2f2;
+      --red: #991b1b;
+      --card: #ffffff;
+      --shadow: 0 24px 70px rgba(15, 23, 42, .18);
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      font: 16px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, .14), transparent 32rem),
+        linear-gradient(180deg, #f8fbff, var(--bg));
+    }
+    .app {
+      width: min(100%, 760px);
+      margin: 0 auto;
+      padding: max(16px, env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));
+    }
+    .hero {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .eyebrow {
+      color: var(--blue-dark);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 2px 0 0;
+      font-size: clamp(26px, 8vw, 40px);
+      line-height: 1.02;
+      letter-spacing: -.02em;
+    }
+    .badge {
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .72);
+      color: #334155;
+      padding: 8px 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .camera {
+      position: relative;
+      background: #0f172a;
+      aspect-ratio: 1 / 1;
+      max-height: min(62vh, 620px);
+    }
+    video, canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+    canvas { display: none; }
+    .reticle {
+      position: absolute;
+      inset: 15%;
+      border: 3px solid rgba(255, 255, 255, .92);
+      border-radius: 24px;
+      box-shadow: 0 0 0 999px rgba(15, 23, 42, .25);
+      pointer-events: none;
+    }
+    .camera-state {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 22px;
+      text-align: center;
+      color: #fff;
+      background: linear-gradient(180deg, rgba(15, 23, 42, .7), rgba(15, 23, 42, .88));
+    }
+    .camera-state h2 {
+      margin: 0;
+      font-size: clamp(24px, 7vw, 34px);
+      line-height: 1.1;
+    }
+    .camera-state p {
+      max-width: 36rem;
+      margin: 10px auto 0;
+      color: #dbeafe;
+      font-size: 17px;
+    }
+    .actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    button, .upload {
+      min-height: 52px;
+      border: 0;
+      border-radius: 16px;
+      font: inherit;
+      font-size: 17px;
+      font-weight: 900;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 16px;
+    }
+    button.primary {
+      background: var(--blue);
+      color: #fff;
+      box-shadow: 0 16px 38px rgba(37, 99, 235, .35);
+    }
+    button.secondary, .upload {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+    }
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    .upload input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .content {
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+    .status {
+      border-radius: 16px;
+      padding: 11px 12px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-weight: 800;
+    }
+    .status.error {
+      background: var(--red-bg);
+      color: var(--red);
+    }
+    .status.warn {
+      background: var(--amber-bg);
+      color: var(--amber);
+    }
+    .manual {
+      display: grid;
+      gap: 10px;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      color: #334155;
+      font-weight: 850;
+    }
+    input, select {
+      width: 100%;
+      min-height: 52px;
+      border: 1px solid #cbd5e1;
+      border-radius: 16px;
+      padding: 12px 13px;
+      font: inherit;
+      font-size: 17px;
+      color: var(--ink);
+      background: #fff;
+    }
+    .grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: .75fr 1.25fr;
+    }
+    .hint {
+      color: var(--muted);
+      font-weight: 650;
+      font-size: 15px;
+    }
+    .target {
+      border-radius: 16px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      color: #334155;
+      overflow-wrap: anywhere;
+      font-size: 15px;
+    }
+    .target strong {
+      display: block;
+      color: var(--ink);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 3px;
+    }
+    @media (max-width: 560px) {
+      .app { padding-left: 12px; padding-right: 12px; }
+      .hero { align-items: flex-start; }
+      .badge { display: none; }
+      .panel { border-radius: 22px; }
+      .camera { max-height: 55vh; }
+      .grid { grid-template-columns: 1fr; }
+      .actions { grid-template-columns: 1fr; }
+    }
+    @media (min-width: 561px) {
+      .actions { grid-template-columns: 1fr 1fr; }
+      .actions .primary { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <div>
+        <div class="eyebrow">D&T Inventory</div>
+        <h1>Camera scanner</h1>
+      </div>
+      <div class="badge">View Mode only</div>
+    </header>
+
+    <section class="panel" aria-label="Camera scanner">
+      <div class="camera">
+        <video id="video" muted autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+        <div class="reticle" aria-hidden="true"></div>
+        <div id="cameraState" class="camera-state">
+          <div>
+            <h2>Camera is ready</h2>
+            <p>Tap Start camera and allow permission. Scanned labels open the inventory page in View Mode.</p>
+            <div class="actions">
+              <button id="startBtn" class="primary" type="button">Start camera</button>
+              <label class="upload">Take QR photo<input id="imageInput" type="file" accept="image/*" capture="environment"></label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="content">
+        <div id="status" class="status">Waiting for camera permission.</div>
+
+        <div class="manual">
+          <label>Paste QR URL or enter Location Code
+            <input id="manualInput" placeholder="419A-FCU-01 or /exec?room=419A&loc=...">
+          </label>
+          <div class="grid">
+            <label>Room
+              <select id="roomInput">
+                <option value="419A">419A</option>
+                <option value="V++">V++</option>
+                <option value="415B">415B</option>
+                <option value="415C">415C</option>
+              </select>
+            </label>
+            <label>Location / storage code
+              <input id="locInput" placeholder="419A-FCU-01">
+            </label>
+          </div>
+          <button id="openManualBtn" class="secondary" type="button">Open View</button>
+          <p class="hint">Update Mode is never opened by this scanner. Use the inventory app's protected Update button after the storage page opens.</p>
+          <div id="targetBox" class="target"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+  (function () {
+    'use strict';
+
+    var video = document.getElementById('video');
+    var canvas = document.getElementById('canvas');
+    var cameraState = document.getElementById('cameraState');
+    var statusEl = document.getElementById('status');
+    var startBtn = document.getElementById('startBtn');
+    var imageInput = document.getElementById('imageInput');
+    var manualInput = document.getElementById('manualInput');
+    var roomInput = document.getElementById('roomInput');
+    var locInput = document.getElementById('locInput');
+    var openManualBtn = document.getElementById('openManualBtn');
+    var targetBox = document.getElementById('targetBox');
+    var stream = null;
+    var raf = 0;
+    var detector = null;
+
+    function text(value) {
+      return String(value == null ? '' : value).trim();
+    }
+
+    function currentParams() {
+      try {
+        return new URL(window.location.href).searchParams;
+      } catch (err) {
+        return new URLSearchParams();
+      }
+    }
+
+    function routeKey(url) {
+      return (url.protocol + '//' + url.host + url.pathname).replace(/\/+$/, '').toLowerCase();
+    }
+
+    function normalizeExecBase(value) {
+      var raw = text(value);
+      if (!raw || !/^https?:\/\//i.test(raw)) return '';
+      try {
+        var url = new URL(raw);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+        url.hash = '';
+        url.search = '';
+        return url.href.replace(/\/+$/, '');
+      } catch (err) {
+        return '';
+      }
+    }
+
+    var targetBase = normalizeExecBase(currentParams().get('target'));
+
+    function setStatus(message, kind) {
+      statusEl.textContent = message;
+      statusEl.className = 'status' + (kind ? ' ' + kind : '');
+    }
+
+    function updateTargetBox() {
+      targetBox.innerHTML = '<strong>Inventory target</strong>' + (targetBase || 'No target configured. Paste a full inventory QR URL, or open this scanner from the D&T Inventory app.');
+    }
+
+    function loadJsQr(done, fail) {
+      if (window.jsQR) return done();
+      var existing = document.getElementById('jsqrLoader');
+      if (existing) {
+        setTimeout(function () { loadJsQr(done, fail); }, 250);
+        return;
+      }
+      var script = document.createElement('script');
+      script.id = 'jsqrLoader';
+      script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+      script.onload = done;
+      script.onerror = fail || function () {};
+      document.head.appendChild(script);
+    }
+
+    function isAllowedInventoryUrl(url) {
+      if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:')) return false;
+      if (targetBase) {
+        try {
+          return routeKey(url) === routeKey(new URL(targetBase));
+        } catch (err) {
+          return false;
+        }
+      }
+      return url.hostname === 'script.google.com' &&
+        /\/macros\//.test(url.pathname) &&
+        /\/exec\/?$/.test(url.pathname);
+    }
+
+    function parseInput(input) {
+      var raw = text(input);
+      if (!raw) return { error: 'Enter a QR URL or Location Code.' };
+      var params = null;
+      var baseFromQr = '';
+      if (raw.charAt(0) === '?') {
+        params = new URLSearchParams(raw.slice(1));
+      } else if (/^(room|loc|mode)=/i.test(raw)) {
+        params = new URLSearchParams(raw);
+      } else if (/^\/?exec\?/i.test(raw)) {
+        if (!targetBase) return { error: 'Relative QR URLs need a target. Open this scanner from the inventory app, or paste the full QR URL.' };
+        var rel = raw.charAt(0) === '/' ? raw : '/' + raw;
+        params = new URL(rel, targetBase).searchParams;
+      } else if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || /^\/\//.test(raw)) {
+        if (/^\/\//.test(raw)) return { error: 'Protocol-relative URLs are not allowed.' };
+        var parsed;
+        try {
+          parsed = new URL(raw);
+        } catch (err) {
+          return { error: 'That QR URL is malformed.' };
+        }
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return { error: 'Only http:// or https:// QR URLs are allowed.' };
+        }
+        if (!isAllowedInventoryUrl(parsed)) {
+          return { error: 'That QR URL is not for this inventory app.' };
+        }
+        baseFromQr = normalizeExecBase(parsed.href);
+        params = parsed.searchParams;
+      } else {
+        var room = text(roomInput.value) || inferRoomFromCode(raw) || '419A';
+        return { room: room, loc: raw, base: targetBase };
+      }
+      var parsedRoom = text(params.get('room'));
+      var parsedLoc = text(params.get('loc'));
+      if (!parsedRoom || !parsedLoc) return { error: 'QR route is missing room or loc.' };
+      return { room: parsedRoom, loc: parsedLoc, base: baseFromQr || targetBase, modeStripped: !!params.get('mode') };
+    }
+
+    function inferRoomFromCode(value) {
+      var raw = text(value);
+      if (/^419A-/i.test(raw)) return '419A';
+      if (/^VPP-/i.test(raw)) return 'V++';
+      if (/^415B-/i.test(raw)) return '415B';
+      if (/^415C-/i.test(raw)) return '415C';
+      return '';
+    }
+
+    function buildViewUrl(result) {
+      var base = normalizeExecBase(result.base || targetBase);
+      if (!base) return '';
+      var url = new URL(base);
+      url.searchParams.set('room', result.room);
+      url.searchParams.set('loc', result.loc);
+      return url.href;
+    }
+
+    function openResult(result) {
+      if (!result || result.error) {
+        setStatus(result && result.error ? result.error : 'No matching QR route found.', 'error');
+        return;
+      }
+      var href = buildViewUrl(result);
+      if (!href) {
+        setStatus('No inventory target is configured. Paste a full inventory QR URL or open this scanner from the app.', 'error');
+        return;
+      }
+      setStatus('Opening ' + result.room + ' / ' + result.loc + ' in View Mode...', result.modeStripped ? 'warn' : '');
+      window.location.href = href;
+    }
+
+    function handleText(value) {
+      openResult(parseInput(value));
+    }
+
+    function startCamera() {
+      if (stream) return;
+      if (!window.isSecureContext) {
+        setStatus('Camera requires HTTPS. Open this scanner from its https:// GitHub Pages URL.', 'error');
+        return;
+      }
+      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+        setStatus('This browser does not expose camera access. Use Take QR photo or paste the QR URL.', 'error');
+        return;
+      }
+      setStatus('Requesting camera permission...');
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1280 } },
+        audio: false
+      }).then(function (nextStream) {
+        stream = nextStream;
+        video.srcObject = stream;
+        cameraState.style.display = 'none';
+        setStatus('Scanning. Hold the storage label inside the square.');
+        return video.play();
+      }).then(function () {
+        scanFrame();
+      }).catch(function (err) {
+        var name = err && err.name ? err.name : 'CameraError';
+        var message = err && err.message ? ': ' + err.message : '';
+        setStatus(name + message + '. Use Take QR photo, paste the QR URL, or check browser camera permission.', 'error');
+      });
+    }
+
+    function stopCamera() {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      if (stream) stream.getTracks().forEach(function (track) { track.stop(); });
+      stream = null;
+    }
+
+    function scanFrame() {
+      if (!stream || !video) return;
+      if ('BarcodeDetector' in window) {
+        try {
+          if (!detector) detector = new BarcodeDetector({ formats: ['qr_code'] });
+          detector.detect(video).then(function (codes) {
+            if (codes && codes.length) {
+              stopCamera();
+              handleText(codes[0].rawValue || '');
+              return;
+            }
+            raf = requestAnimationFrame(scanFrame);
+          }).catch(function () {
+            scanWithJsQrVideo();
+          });
+          return;
+        } catch (err) {
+          scanWithJsQrVideo();
+          return;
+        }
+      }
+      scanWithJsQrVideo();
+    }
+
+    function scanWithJsQrVideo() {
+      loadJsQr(function () {
+        if (!window.jsQR || !video.videoWidth || !video.videoHeight) {
+          raf = requestAnimationFrame(scanFrame);
+          return;
+        }
+        var size = Math.min(video.videoWidth, video.videoHeight);
+        var sx = Math.max(0, Math.floor((video.videoWidth - size) / 2));
+        var sy = Math.max(0, Math.floor((video.videoHeight - size) / 2));
+        canvas.width = size;
+        canvas.height = size;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+        var image = ctx.getImageData(0, 0, size, size);
+        var code = window.jsQR(image.data, image.width, image.height);
+        if (code && code.data) {
+          stopCamera();
+          handleText(code.data);
+          return;
+        }
+        raf = requestAnimationFrame(scanFrame);
+      }, function () {
+        setStatus('QR decoder could not load. Paste the QR URL or use Take QR photo.', 'error');
+      });
+    }
+
+    function decodeImage(file) {
+      if (!file) return;
+      setStatus('Reading QR image...');
+      loadJsQr(function () {
+        var reader = new FileReader();
+        reader.onload = function () {
+          var image = new Image();
+          image.onload = function () {
+            try {
+              var max = 1600;
+              var scale = Math.min(1, max / Math.max(image.width, image.height));
+              canvas.width = Math.max(1, Math.round(image.width * scale));
+              canvas.height = Math.max(1, Math.round(image.height * scale));
+              var ctx = canvas.getContext('2d');
+              ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+              var data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              var code = window.jsQR(data.data, data.width, data.height);
+              if (code && code.data) {
+                handleText(code.data);
+                return;
+              }
+              setStatus('No QR code found in that image. Try a clearer photo or paste the QR URL.', 'error');
+            } catch (err) {
+              setStatus('Could not decode that image. Paste the QR URL instead.', 'error');
+            }
+          };
+          image.onerror = function () {
+            setStatus('Could not read that image file.', 'error');
+          };
+          image.src = reader.result;
+        };
+        reader.onerror = function () {
+          setStatus('Could not read that image file.', 'error');
+        };
+        reader.readAsDataURL(file);
+      }, function () {
+        setStatus('QR image decoding needs jsQR, but it could not load.', 'error');
+      });
+    }
+
+    startBtn.addEventListener('click', startCamera);
+    imageInput.addEventListener('change', function () {
+      decodeImage(imageInput.files && imageInput.files[0]);
+      imageInput.value = '';
+    });
+    openManualBtn.addEventListener('click', function () {
+      var raw = text(manualInput.value);
+      if (raw) {
+        handleText(raw);
+        return;
+      }
+      openResult({ room: text(roomInput.value) || '419A', loc: text(locInput.value), base: targetBase });
+    });
+    manualInput.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') handleText(manualInput.value);
+    });
+    locInput.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        openResult({ room: text(roomInput.value) || '419A', loc: text(locInput.value), base: targetBase });
+      }
+    });
+    window.addEventListener('pagehide', stopCamera);
+
+    updateTargetBox();
+    if (!targetBase) setStatus('No inventory target was supplied. Open this scanner from the D&T Inventory app, or paste a full QR URL.', 'warn');
+  })();
+  </script>
+</body>
+</html>

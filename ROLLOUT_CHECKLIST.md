@@ -1,6 +1,6 @@
 # D&T QR Inventory Rollout Checklist
 
-This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@28`; version `@27` is retained in Apps Script version history as the previous 90x29 label fit fallback.
+This checklist is for the live Google Apps Script deployment and the live dashboard spreadsheet. The current production deployment is version `@39`; version `@38` is retained in Apps Script version history as the full-screen Apps Script-frame scanner fallback.
 
 Production URL:
 
@@ -24,19 +24,20 @@ Students and teaching staff should use View Mode only. They should not use Updat
 
 1. Open the storage QR page.
 2. Use the in-app Update button, or add `&mode=tech` to the storage URL for the same storage route.
-3. Search or filter items inside the storage page.
-4. Update quantity using a non-negative number. Decimal quantities are allowed where appropriate.
-5. Set status to one of:
+3. Unlock Update Mode with an authorised Google account or configured PIN. The URL alone must not be treated as authorisation.
+4. Search or filter items inside the storage page.
+5. Update quantity using a non-negative number. Decimal quantities are allowed where appropriate.
+6. Set status to one of:
    - Good
    - Low Stock
    - Missing
    - Needs Maintenance
-6. Check the changed-row indicator and unsaved change count.
-7. Press Save updates.
-8. Confirm the green saved message appears and the unsaved count clears.
-9. If save fails, check the validation message, correct the row, and retry.
-10. Use Add item only for items physically confirmed in the current storage.
-11. Use Remove only after checking the confirmation details: item name, item ID, storage route, and current quantity.
+7. Check the changed-row indicator and unsaved change count.
+8. Press Save updates.
+9. Confirm the green saved message appears and the unsaved count clears.
+10. If save fails, check the validation message, correct the row, and retry.
+11. Use Add item only for items physically confirmed in the current storage.
+12. Use Remove only after checking the confirmation details: item name, item ID, storage route, and current quantity.
 
 Placeholder storage rows exist only to make empty QR/location pages routable. Do not treat placeholder rows as stock items.
 
@@ -116,6 +117,9 @@ Each label preview includes `Print this label`, and the QR Labels page includes 
 - V++ direct links open correctly with URL encoding
 - QR links are populated
 - QR labels are generated and sample-scanned
+- scanner workflow works: full-screen scanner can request camera where browser policy allows, and fallback works when camera remains blocked: native phone Camera scan, pasted QR URL, manual room/location entry, or QR image upload
+- external scanner page is online over HTTPS and redirects scanned QR labels back to the same `/exec?room=...&loc=...` View route
+- Update Mode authorization is configured and direct `?mode=tech` access alone cannot save/add/remove inventory
 - Update Mode save works on a safe test row
 - at least one chemical cabinet page displays hazard styling
 - View Mode is understandable to students and teaching staff
