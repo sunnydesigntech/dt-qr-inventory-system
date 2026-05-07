@@ -105,6 +105,9 @@
       color: #fff;
       background: linear-gradient(180deg, rgba(15, 23, 42, .7), rgba(15, 23, 42, .88));
     }
+    .camera-state > div {
+      width: min(100%, 34rem);
+    }
     .camera-state h2 {
       margin: 0;
       font-size: clamp(24px, 7vw, 34px);
@@ -115,6 +118,7 @@
       margin: 10px auto 0;
       color: #dbeafe;
       font-size: 17px;
+      overflow-wrap: anywhere;
     }
     .actions {
       display: grid;
@@ -134,6 +138,10 @@
       justify-content: center;
       gap: 8px;
       padding: 13px 16px;
+    }
+    .actions button,
+    .actions .upload {
+      width: 100%;
     }
     button.primary {
       background: var(--blue);
@@ -318,6 +326,8 @@
       .badge { display: none; }
       .panel { border-radius: 22px; }
       .camera { max-height: 55vh; }
+      .camera-state { padding: 18px; }
+      .camera-state p { max-width: 18rem; }
       .grid { grid-template-columns: 1fr; }
       .actions { grid-template-columns: 1fr; }
     }
