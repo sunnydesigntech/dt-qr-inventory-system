@@ -260,7 +260,7 @@ Browser tips:
 - If the first scanner modal reports the Apps Script frame is blocking camera, use `Open full-screen camera scanner` before trying `Start camera`.
 - If the camera remains blocked, use native Camera scanning, pasted QR URLs, or manual room/location entry.
 
-The static scanner source lives in `scanner/index.html`. The GitHub Pages workflow in `.github/workflows/deploy-scanner-pages.yml` publishes only that scanner folder; the scanner does not contain Spreadsheet IDs, Apps Script deployment IDs, PINs, or private data.
+The static scanner source lives in `scanner/index.html`. The public scanner is published from the repository's `gh-pages` branch at the GitHub Pages URL above. The scanner does not contain Spreadsheet IDs, Apps Script deployment IDs, PINs, or private data.
 
 ## Admin Menu
 
