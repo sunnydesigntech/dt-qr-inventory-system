@@ -244,6 +244,12 @@ https://sunnydesigntech.github.io/dt-qr-inventory-system/scanner/
 
 The scanner receives the active `/exec` URL as a `target` query parameter, scans the QR code, strips any `mode=tech`, and redirects back to the inventory app in View Mode. If you fork or self-host, set `EXTERNAL_SCANNER_URL` to your own HTTPS scanner page.
 
+For no-camera QA, open the scanner with `selftest=1` and a `target` URL. This does not auto-redirect; it renders the parsed room, location, whether `mode=tech` was stripped, and the final View URL. Use this before staff training or rollout replay to prove that pasted/scanned QR inputs resolve safely even when browser camera permission is blocked:
+
+```text
+https://sunnydesigntech.github.io/dt-qr-inventory-system/scanner/?target=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FYOUR_DEPLOYMENT_ID%2Fexec&selftest=1
+```
+
 If camera access is still blocked, the scanner remains usable through fallbacks:
 
 1. Open the camera scanner, tap `Start camera`, and allow camera permission.

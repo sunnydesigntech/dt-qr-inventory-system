@@ -118,6 +118,7 @@ Each label preview includes `Print this label`, and the QR Labels page includes 
 - V++ direct links open correctly with URL encoding
 - QR links are populated
 - QR labels are generated and sample-scanned
+- scanner self-test is run with the active `/exec` target to prove QR parsing, View-only routing, V++ encoding, `mode=tech` stripping, and unsafe URL rejection without relying on camera permission
 - scanner workflow works: full-screen scanner can request camera where browser policy allows, and fallback works when camera remains blocked: native phone Camera scan, pasted QR URL, manual room/location entry, or QR image upload
 - external scanner page is online over HTTPS and redirects scanned QR labels back to the same `/exec?room=...&loc=...` View route
 - Update Mode authorization is configured and direct `?mode=tech` access alone cannot save/add/remove inventory

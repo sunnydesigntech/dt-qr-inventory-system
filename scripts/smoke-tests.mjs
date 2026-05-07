@@ -75,6 +75,16 @@ function fallbackRouteHref(room, loc) {
   return '?room=' + encodeURIComponent(room) + '&loc=' + encodeURIComponent(loc);
 }
 
+function scannerSelfTestViewUrl(input, allowedBase = DEPLOYED_EXEC) {
+  const parsed = parseInventoryQrUrl(input, allowedBase);
+  if (parsed.error) return { href: '', error: parsed.error, modeStripped: parsed.modeStripped };
+  return {
+    href: buildLocationUrl(allowedBase, parsed.room, parsed.loc),
+    error: '',
+    modeStripped: parsed.modeStripped
+  };
+}
+
 function buildStandaloneScannerUrl(currentUrl) {
   const url = new URL(currentUrl);
   ['room', 'loc', 'mode', 'admin', 'printer', 'label'].forEach((key) => url.searchParams.delete(key));
@@ -179,6 +189,13 @@ assert.equal(parseInventoryQrUrl('javascript:alert(1)').error, 'scheme');
 assert.equal(parseInventoryQrUrl('data:text/html,hello').error, 'scheme');
 assert.equal(parseInventoryQrUrl('https://example.com/exec?room=419A&loc=419A-FCU-01').error, 'external');
 assert.equal(parseInventoryQrUrl('//example.com/exec?room=419A&loc=419A-FCU-01').error, 'external');
+assert.equal(
+  scannerSelfTestViewUrl(`${DEPLOYED_EXEC}?room=419A&loc=419A-FCU-01&mode=tech`).href,
+  `${DEPLOYED_EXEC}?room=419A&loc=419A-FCU-01`
+);
+assert.equal(scannerSelfTestViewUrl(`${DEPLOYED_EXEC}?room=419A&loc=419A-FCU-01&mode=tech`).modeStripped, true);
+assert.equal(scannerSelfTestViewUrl('room=V%2B%2B&loc=Maker%20Bench%201').href, `${DEPLOYED_EXEC}?room=V%2B%2B&loc=Maker%20Bench%201`);
+assert.equal(scannerSelfTestViewUrl('https://example.com/exec?room=419A&loc=419A-FCU-01').error, 'external');
 
 const topScanner = buildStandaloneScannerUrl('https://n-abc-script.googleusercontent.com/userCodeAppPanel?room=419A&loc=419A-FCU-01&mode=tech&scanner=1');
 assert.match(topScanner, /scanner=1/);
@@ -201,6 +218,9 @@ const scannerHtml = readFileSync(new URL('../scanner/index.html', import.meta.ur
 assert.match(scannerHtml, /Camera scanner/);
 assert.match(scannerHtml, /View Mode/);
 assert.match(scannerHtml, /mode=tech|Update Mode is never opened by this scanner/);
+assert.match(scannerHtml, /No-camera route self-test/);
+assert.match(scannerHtml, /data-selftest-index/);
+assert.match(scannerHtml, /Passed: resolves to View Mode/);
 assert.doesNotMatch(scannerHtml, /SPREADSHEET_ID|AKfyc|1GqK9/);
 
 const rows = [

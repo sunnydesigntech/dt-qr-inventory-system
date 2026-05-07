@@ -225,6 +225,93 @@
       letter-spacing: .08em;
       margin-bottom: 3px;
     }
+    .selftest {
+      margin-top: 14px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 16px 44px rgba(15, 23, 42, .08);
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+    .selftest[hidden] { display: none; }
+    .selftest h2 {
+      margin: 0;
+      font-size: clamp(22px, 6vw, 30px);
+      line-height: 1.12;
+    }
+    .selftest p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      font-weight: 650;
+    }
+    .selftest-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    }
+    .selftest-sample {
+      min-height: 46px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #1e293b;
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 15px;
+      font-weight: 850;
+      justify-content: flex-start;
+      text-align: left;
+    }
+    .selftest-result {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #f8fafc;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .selftest-result.pass {
+      border-color: #bbf7d0;
+      background: #f0fdf4;
+    }
+    .selftest-result.fail {
+      border-color: #fecaca;
+      background: #fef2f2;
+    }
+    .selftest-row {
+      display: grid;
+      gap: 4px;
+      color: #334155;
+      font-size: 15px;
+      overflow-wrap: anywhere;
+    }
+    .selftest-row strong {
+      color: #0f172a;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .selftest-verdict {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 15px;
+      font-weight: 900;
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .selftest-result.pass .selftest-verdict {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .selftest-result.fail .selftest-verdict {
+      background: #fee2e2;
+      color: #991b1b;
+    }
     @media (max-width: 560px) {
       .app { padding-left: 12px; padding-right: 12px; }
       .hero { align-items: flex-start; }
@@ -292,6 +379,23 @@
         </div>
       </div>
     </section>
+
+    <section id="selfTestPanel" class="selftest" aria-label="Scanner self-test" hidden>
+      <div>
+        <div class="eyebrow">Scanner QA</div>
+        <h2>No-camera route self-test</h2>
+      </div>
+      <p>This mode proves scanner routing without camera permission. It parses the same QR/manual input path, strips Update Mode, rejects unsafe URLs, and shows the final View URL instead of redirecting automatically.</p>
+      <label>Self-test input
+        <input id="selfTestInput" placeholder="419A-FCU-01 or /exec?room=419A&loc=419A-FCU-01">
+      </label>
+      <label>Expected final View URL (optional)
+        <input id="selfTestExpected" placeholder="https://script.google.com/.../exec?room=419A&loc=419A-FCU-01">
+      </label>
+      <button id="runSelfTestBtn" class="primary" type="button">Run route self-test</button>
+      <div class="selftest-grid" id="selfTestSamples"></div>
+      <div id="selfTestResult" class="selftest-result"></div>
+    </section>
   </main>
 
   <script>
@@ -309,6 +413,12 @@
     var locInput = document.getElementById('locInput');
     var openManualBtn = document.getElementById('openManualBtn');
     var targetBox = document.getElementById('targetBox');
+    var selfTestPanel = document.getElementById('selfTestPanel');
+    var selfTestInput = document.getElementById('selfTestInput');
+    var selfTestExpected = document.getElementById('selfTestExpected');
+    var runSelfTestBtn = document.getElementById('runSelfTestBtn');
+    var selfTestSamples = document.getElementById('selfTestSamples');
+    var selfTestResult = document.getElementById('selfTestResult');
     var stream = null;
     var raf = 0;
     var detector = null;
@@ -323,6 +433,21 @@
       } catch (err) {
         return new URLSearchParams();
       }
+    }
+
+    var pageParams = currentParams();
+    var selfTestMode = pageParams.get('selftest') === '1' || pageParams.get('qa') === '1';
+
+    function esc(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, function (match) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[match];
+      });
     }
 
     function routeKey(url) {
@@ -343,7 +468,7 @@
       }
     }
 
-    var targetBase = normalizeExecBase(currentParams().get('target'));
+    var targetBase = normalizeExecBase(pageParams.get('target'));
 
     function setStatus(message, kind) {
       statusEl.textContent = message;
@@ -440,6 +565,66 @@
       return url.href;
     }
 
+    function selfTestPresets() {
+      var base = targetBase || 'https://script.google.com/macros/s/DEPLOYMENT/exec';
+      return [
+        { label: 'Raw 419A code', input: '419A-FCU-01' },
+        { label: 'Relative View URL', input: '/exec?room=419A&loc=419A-FCU-01' },
+        { label: 'Tech mode stripped', input: base + '?room=419A&loc=419A-FCU-01&mode=tech' },
+        { label: 'V++ encoded route', input: 'room=V%2B%2B&loc=Maker%20Bench%201' },
+        { label: 'Reject javascript:', input: 'javascript:alert(1)' },
+        { label: 'Reject external URL', input: 'https://example.com/exec?room=419A&loc=419A-FCU-01' }
+      ];
+    }
+
+    function renderSelfTestSamples() {
+      if (!selfTestSamples) return;
+      selfTestSamples.innerHTML = selfTestPresets().map(function (sample, index) {
+        return '<button type="button" class="selftest-sample" data-selftest-index="' + index + '">' + esc(sample.label) + '</button>';
+      }).join('');
+    }
+
+    function renderSelfTest(input, expected) {
+      if (!selfTestResult) return;
+      var result = parseInput(input);
+      var href = result && !result.error ? buildViewUrl(result) : '';
+      var expectedClean = text(expected);
+      var pass = false;
+      var verdict = '';
+      if (result.error) {
+        pass = /^(javascript:|data:|vbscript:|https:\/\/example\.com|\/\/)/i.test(text(input));
+        verdict = pass ? 'Passed: unsafe or invalid input rejected' : 'Failed: input could not be routed';
+      } else if (!href) {
+        verdict = 'Failed: route parsed but no target base is configured';
+      } else if (expectedClean) {
+        pass = href === expectedClean;
+        verdict = pass ? 'Passed: final View URL matches expected' : 'Failed: final View URL differs from expected';
+      } else {
+        pass = !/[?&]mode=tech\b/i.test(href);
+        verdict = pass ? 'Passed: resolves to View Mode' : 'Failed: Update Mode leaked into route';
+      }
+      selfTestResult.className = 'selftest-result ' + (pass ? 'pass' : 'fail');
+      selfTestResult.innerHTML =
+        '<span class="selftest-verdict">' + esc(verdict) + '</span>' +
+        '<div class="selftest-row"><strong>Input</strong><span>' + esc(input || '') + '</span></div>' +
+        '<div class="selftest-row"><strong>Parsed room</strong><span>' + esc(result.room || '-') + '</span></div>' +
+        '<div class="selftest-row"><strong>Parsed location</strong><span>' + esc(result.loc || '-') + '</span></div>' +
+        '<div class="selftest-row"><strong>Mode stripped</strong><span>' + (result.modeStripped ? 'Yes' : 'No') + '</span></div>' +
+        '<div class="selftest-row"><strong>Final View URL</strong><span>' + esc(href || '-') + '</span></div>' +
+        '<div class="selftest-row"><strong>Error</strong><span>' + esc(result.error || '-') + '</span></div>';
+    }
+
+    function initSelfTest() {
+      if (!selfTestMode || !selfTestPanel) return;
+      selfTestPanel.hidden = false;
+      renderSelfTestSamples();
+      var initial = pageParams.get('input') || pageParams.get('test') || '419A-FCU-01';
+      var expected = pageParams.get('expected') || '';
+      selfTestInput.value = initial;
+      selfTestExpected.value = expected;
+      renderSelfTest(initial, expected);
+    }
+
     function openResult(result) {
       if (!result || result.error) {
         setStatus(result && result.error ? result.error : 'No matching QR route found.', 'error');
@@ -455,6 +640,11 @@
     }
 
     function handleText(value) {
+      if (selfTestMode) {
+        selfTestInput.value = value || '';
+        renderSelfTest(value || '', selfTestExpected.value);
+        return;
+      }
       openResult(parseInput(value));
     }
 
@@ -595,19 +785,40 @@
         handleText(raw);
         return;
       }
+      if (selfTestMode) {
+        renderSelfTest('room=' + encodeURIComponent(text(roomInput.value) || '419A') + '&loc=' + encodeURIComponent(text(locInput.value)), selfTestExpected.value);
+        return;
+      }
       openResult({ room: text(roomInput.value) || '419A', loc: text(locInput.value), base: targetBase });
+    });
+    runSelfTestBtn.addEventListener('click', function () {
+      renderSelfTest(selfTestInput.value, selfTestExpected.value);
+    });
+    selfTestSamples.addEventListener('click', function (event) {
+      var button = event.target.closest('[data-selftest-index]');
+      if (!button) return;
+      var sample = selfTestPresets()[Number(button.getAttribute('data-selftest-index'))];
+      if (!sample) return;
+      selfTestInput.value = sample.input;
+      selfTestExpected.value = '';
+      renderSelfTest(sample.input, '');
     });
     manualInput.addEventListener('keydown', function (event) {
       if (event.key === 'Enter') handleText(manualInput.value);
     });
     locInput.addEventListener('keydown', function (event) {
       if (event.key === 'Enter') {
+        if (selfTestMode) {
+          renderSelfTest('room=' + encodeURIComponent(text(roomInput.value) || '419A') + '&loc=' + encodeURIComponent(text(locInput.value)), selfTestExpected.value);
+          return;
+        }
         openResult({ room: text(roomInput.value) || '419A', loc: text(locInput.value), base: targetBase });
       }
     });
     window.addEventListener('pagehide', stopCamera);
 
     updateTargetBox();
+    initSelfTest();
     if (!targetBase) setStatus('No inventory target was supplied. Open this scanner from the D&T Inventory app, or paste a full QR URL.', 'warn');
   })();
   </script>
