@@ -264,6 +264,8 @@ PLAYWRIGHT_NODE_MODULES=/path/to/node_modules node scripts/scanner-camera-smoke.
 
 This opens the public scanner as a top-level HTTPS page, grants camera permission in Chromium/Chrome, uses a fake camera device, clicks `Start camera`, and fails if the page cannot reach the scanning state. It does not access the live Google Sheet and does not prove a specific phone's camera permission setting; it proves the scanner page can start a camera stream when the browser allows it.
 
+For real-phone QA, expand `Camera diagnostics` on the standalone scanner and use `Copy diagnostics` after tapping `Start camera`. This records the secure-context state, frame state, `mediaDevices`/`getUserMedia` support, permission state, exact camera error, platform, and user agent. Paste it into the scanner evidence report or `PILOT_TEST_LOG` so blocked-camera reports are actionable.
+
 If camera access is still blocked, the scanner remains usable through fallbacks:
 
 1. Open the camera scanner, tap `Start camera`, and allow camera permission.
@@ -440,6 +442,11 @@ Post-deploy smoke tests:
 7. Run `Build QR Label Sheet` and spot-check a generated QR image/link.
 
 ## Release Log
+
+### 2026-05-11 11:30 HKT
+
+- Version: scanner static update
+- Summary: added phone-visible camera diagnostics and a `Copy diagnostics` action to the standalone scanner page. Failed real-phone camera tests now produce actionable evidence: secure context, top-level/frame state, mediaDevices/getUserMedia availability, permission state, exact camera error, platform, and user agent.
 
 ### 2026-05-11 11:20 HKT
 
