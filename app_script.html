@@ -2381,11 +2381,18 @@
 
   try {
     if (shouldAutoOpenScanner()) {
+      if (configuredExternalScannerUrl() && openStandaloneScanner({ sameTab: true })) {
+        return;
+      }
       scannerState.open = true;
-      scannerState.error = '';
-      scannerState.message = isFramedApp()
-        ? 'This scanner is still inside an Apps Script frame. Use Open full-screen camera scanner, then tap Start camera.'
-        : 'Full-screen scanner is ready. Tap Start camera and allow camera permission.';
+      scannerState.error = configuredExternalScannerUrl()
+        ? 'Could not open the standalone camera scanner. Paste a QR URL, upload a QR image, or enter the room/location manually.'
+        : '';
+      scannerState.message = configuredExternalScannerUrl()
+        ? 'Manual scanner fallback is ready. QR inputs still open View Mode by default.'
+        : (isFramedApp()
+          ? 'This scanner is inside an Apps Script frame and camera access may be blocked. Use manual entry or QR image upload if Start camera fails.'
+          : 'Full-screen scanner is ready. Tap Start camera and allow camera permission.');
       scannerState.suggestions = [];
       scannerState.imageDecodeMessage = '';
       scannerState.diagnostics = collectScannerDiagnostics();

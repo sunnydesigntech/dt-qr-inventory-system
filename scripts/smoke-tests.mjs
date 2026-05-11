@@ -291,6 +291,7 @@ assert.match(appScript, /googleusercontent\.com/);
 assert.match(appScript, /function openScanner\(\)[\s\S]*configuredExternalScannerUrl\(\)[\s\S]*openStandaloneScanner\(\{/);
 assert.match(appScript, /function openStandaloneScanner\(options\)[\s\S]*return true;[\s\S]*return false;/);
 assert.match(appScript, /openStandaloneScanner\(\{ sameTab: true \}\)/);
+assert.match(appScript, /shouldAutoOpenScanner\(\)[\s\S]*configuredExternalScannerUrl\(\)[\s\S]*openStandaloneScanner\(\{ sameTab: true \}\)[\s\S]*return;/);
 assert.match(appScript, /window\.location\.assign\(url\)/);
 assert.match(appScript, /function scannerActionHtml/);
 assert.match(appScript, /target="_top"/);
