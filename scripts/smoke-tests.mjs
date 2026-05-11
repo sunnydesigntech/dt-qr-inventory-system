@@ -224,8 +224,10 @@ assert.match(scannerHtml, /Passed: resolves to View Mode/);
 assert.doesNotMatch(scannerHtml, /SPREADSHEET_ID|AKfyc|1GqK9/);
 
 const appScript = readFileSync(new URL('../app_script.html', import.meta.url), 'utf8');
-assert.match(appScript, /function openScanner\(\)[\s\S]*configuredExternalScannerUrl\(\)[\s\S]*openStandaloneScanner\(\)/);
-assert.match(appScript, /function openStandaloneScanner\(\)[\s\S]*return true;[\s\S]*return false;/);
+assert.match(appScript, /function openScanner\(\)[\s\S]*configuredExternalScannerUrl\(\)[\s\S]*openStandaloneScanner\(\{/);
+assert.match(appScript, /function openStandaloneScanner\(options\)[\s\S]*return true;[\s\S]*return false;/);
+assert.match(appScript, /openStandaloneScanner\(\{ sameTab: true \}\)/);
+assert.match(appScript, /window\.location\.assign\(url\)/);
 
 const rows = [
   { itemId: '', itemName: '', category: 'Storage', remarks: 'Placeholder row for QR/location page', isPlaceholder: 'TRUE' },

@@ -215,13 +215,22 @@
     }
   }
 
-  function openStandaloneScanner() {
+  function openStandaloneScanner(options) {
+    var opts = options || {};
     var url = standaloneScannerUrl();
     scannerState.standaloneUrl = url;
     if (!url) {
       scannerState.error = 'Could not create the full-screen scanner link. Use the phone Camera app or enter Location Code manually.';
       updateScannerStatus();
       return false;
+    }
+    if (opts.sameTab) {
+      try {
+        window.location.assign(url);
+      } catch (err) {
+        window.location.href = url;
+      }
+      return true;
     }
     var opened = null;
     try {
@@ -1390,7 +1399,7 @@
 
   function openScanner() {
     if (configuredExternalScannerUrl()) {
-      var opened = openStandaloneScanner();
+      var opened = openStandaloneScanner({ sameTab: true });
       if (opened) return;
     }
     scannerState.open = true;
@@ -1866,7 +1875,7 @@
     if (action === 'open-scanner') {
       openScanner();
     } else if (action === 'scanner-open-standalone') {
-      openStandaloneScanner();
+      openStandaloneScanner({ sameTab: true });
     } else if (action === 'scanner-start-camera') {
       startScanner();
     } else if (action === 'close-scanner') {
