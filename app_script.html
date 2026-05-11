@@ -221,7 +221,7 @@
     if (!url) {
       scannerState.error = 'Could not create the full-screen scanner link. Use the phone Camera app or enter Location Code manually.';
       updateScannerStatus();
-      return;
+      return false;
     }
     var opened = null;
     try {
@@ -236,10 +236,12 @@
       scannerState.error = '';
       scannerState.message = 'Full-screen scanner opened. In the new tab, tap Start camera and allow camera permission.';
       updateScannerStatus();
+      return true;
     } else {
       scannerState.error = 'Popup blocked. Open this full-screen scanner link manually: ' + url;
       updateScannerStatus();
       render();
+      return false;
     }
   }
 
@@ -1387,12 +1389,18 @@
   }
 
   function openScanner() {
+    if (configuredExternalScannerUrl()) {
+      var opened = openStandaloneScanner();
+      if (opened) return;
+    }
     scannerState.open = true;
-    scannerState.error = '';
-    scannerState.message = 'Take a QR photo, paste a QR URL, or enter room/location below.';
+    scannerState.error = scannerState.error || '';
+    scannerState.message = scannerState.error
+      ? ''
+      : 'Take a QR photo, paste a QR URL, or enter room/location below.';
     scannerState.suggestions = [];
     scannerState.imageDecodeMessage = '';
-    scannerState.standaloneUrl = '';
+    scannerState.standaloneUrl = scannerState.standaloneUrl || '';
     scannerState.diagnostics = collectScannerDiagnostics();
     refreshCameraPermissionState();
     render();

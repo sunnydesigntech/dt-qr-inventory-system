@@ -64,7 +64,7 @@ Current web app deployment ID:
 Current deployed version:
 
 ```text
-@40 - Runtime web app URL fallback for scanner
+@41 - Open external scanner first
 ```
 
 Current web app URL:
@@ -234,7 +234,7 @@ Recommended Brother driver settings:
 
 ## In-App QR Scanner
 
-The mobile landing page and top bars include an in-app `Scan QR` action. The scanner uses the browser camera over HTTPS and tries the native `BarcodeDetector` API first. Where native QR detection is unavailable, it loads `jsQR` from the jsDelivr CDN (`https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js`) as a lightweight fallback.
+The mobile landing page and top bars include a `Scan QR` action. When `EXTERNAL_SCANNER_URL` is configured, this action opens the standalone HTTPS scanner first so camera permission is requested outside the Apps Script iframe. The in-app scanner modal remains as a fallback for manual entry, QR photo upload, pasted QR URLs, and popup-blocked cases. The scanner uses the browser camera over HTTPS and tries the native `BarcodeDetector` API first. Where native QR detection is unavailable, it loads `jsQR` from the jsDelivr CDN (`https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js`) as a lightweight fallback.
 
 Camera access is not hosted by Apps Script. Google Apps Script HtmlService runs inside a browser frame, and some browsers or device policies block `getUserMedia()` even on the deployed HTTPS `/exec` URL. The app therefore opens a small top-level HTTPS scanner page first. The default scanner URL is:
 
@@ -426,6 +426,14 @@ Post-deploy smoke tests:
 7. Run `Build QR Label Sheet` and spot-check a generated QR image/link.
 
 ## Release Log
+
+### 2026-05-11 08:16 HKT
+
+- Version: `@41`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: changed the Scan QR action to open the standalone HTTPS scanner first when `EXTERNAL_SCANNER_URL` is configured, so camera permission is requested outside the Apps Script iframe. The in-app scanner remains the fallback for popup-blocked cases, QR photo upload, pasted QR URLs, and manual room/location entry.
+- Rollback note: version `@40` remains the runtime web app URL fallback for scanner.
 
 ### 2026-05-07 10:24 HKT
 
