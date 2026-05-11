@@ -264,6 +264,10 @@ assert.match(appScript, /DEFAULT_EXTERNAL_SCANNER_URL = 'https:\/\/sunnydesignte
 assert.match(appScript, /var raw = textValue\(BOOT\.externalScannerUrl\) \|\| DEFAULT_EXTERNAL_SCANNER_URL;/);
 assert.match(appScript, /function scannerTargetUrl/);
 assert.match(appScript, /function scannerTargetCandidate/);
+assert.match(appScript, /function scannerSelfTestUrl/);
+assert.match(appScript, /renderScannerVerificationPanel/);
+assert.match(appScript, /Scanner evidence gate/);
+assert.match(appScript, /admin-scanner/);
 assert.match(appScript, /googleusercontent\.com/);
 assert.match(appScript, /function openScanner\(\)[\s\S]*configuredExternalScannerUrl\(\)[\s\S]*openStandaloneScanner\(\{/);
 assert.match(appScript, /function openStandaloneScanner\(options\)[\s\S]*return true;[\s\S]*return false;/);
@@ -274,6 +278,9 @@ assert.match(appScript, /target="_top"/);
 assert.match(appScript, /data-scanner-link="external"/);
 assert.match(appScript, /Camera permission is requested in the standalone HTTPS scanner/);
 assert.match(appScript, /!externalScanner \? '<button data-action="scanner-start-camera"/);
+
+const codeGs = readFileSync(new URL('../code.gs', import.meta.url), 'utf8');
+assert.match(codeGs, /params\.admin === 'scanner'/);
 
 const rows = [
   { itemId: '', itemName: '', category: 'Storage', remarks: 'Placeholder row for QR/location page', isPlaceholder: 'TRUE' },

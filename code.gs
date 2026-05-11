@@ -850,7 +850,7 @@ function buildClientRoute_(params, locations) {
   if (params && params.admin === 'maintenance') {
     return { name: 'maintenance', admin: 'maintenance' };
   }
-  if (params && (params.admin === 'diagnostics' || params.admin === 'readiness')) {
+  if (params && (params.admin === 'diagnostics' || params.admin === 'readiness' || params.admin === 'scanner')) {
     return { name: 'admin', admin: params.admin };
   }
   if (!(params && params.room && params.loc)) {

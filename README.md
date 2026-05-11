@@ -427,6 +427,14 @@ Post-deploy smoke tests:
 
 ## Release Log
 
+### 2026-05-11 10:52 HKT
+
+- Version: `@46`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: added a non-mutating Admin -> Scanner check evidence page (`/exec?admin=scanner`). It shows the standalone scanner URL, the selected canonical return target, and links to a no-camera self-test and the camera scanner. Use this page before training, replay, or pilot promotion to prove the scanner resolves QR inputs back to View Mode.
+- Rollback note: version `@45` remains the scanner canonical target hardening fallback.
+
 ### 2026-05-11 10:46 HKT
 
 - Version: `@45`

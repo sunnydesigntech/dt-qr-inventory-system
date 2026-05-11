@@ -233,6 +233,21 @@
     }
   }
 
+  function scannerSelfTestUrl() {
+    var external = configuredExternalScannerUrl();
+    var target = scannerTargetUrl();
+    if (!external || !target) return '';
+    try {
+      var url = new URL(external);
+      url.searchParams.set('target', target);
+      url.searchParams.set('source', 'apps-script');
+      url.searchParams.set('selftest', '1');
+      return url.toString();
+    } catch (err) {
+      return '';
+    }
+  }
+
   function openStandaloneScanner(options) {
     var opts = options || {};
     var url = standaloneScannerUrl();
@@ -1037,11 +1052,15 @@
     var tabs = '<div class="px-4 pt-3 flex gap-2 overflow-x-auto no-scrollbar">' +
       adminTab('readiness', 'Readiness', mode) +
       adminTab('diagnostics', 'Diagnostics', mode) +
+      adminTab('scanner', 'Scanner check', mode) +
       '<button data-action="labels" class="room-tab">QR labels</button>' +
       '</div>';
-    var html = topBar(mode === 'diagnostics' ? 'Admin - Diagnostics' : 'Admin - Readiness') + tabs + '<div class="px-4 pt-4 pb-8 space-y-4">';
+    var title = mode === 'diagnostics' ? 'Admin - Diagnostics' : (mode === 'scanner' ? 'Admin - Scanner Check' : 'Admin - Readiness');
+    var html = topBar(title) + tabs + '<div class="px-4 pt-4 pb-8 space-y-4">';
     if (mode === 'diagnostics') {
       html += renderDiagnosticsPanel();
+    } else if (mode === 'scanner') {
+      html += renderScannerVerificationPanel();
     } else {
       html += '<div class="card rounded-2xl p-4"><div class="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-slate-500">Data Readiness</div><div class="font-display text-[36px] font-semibold leading-none text-slate-900 mt-1">' + esc(r.score) + '<span class="text-[18px] text-slate-400">/100</span></div><div class="text-[12.5px] text-slate-500 mt-1">' + esc(r.errors) + ' critical errors - ' + esc(r.warnings) + ' warnings</div></div>' +
         '<div class="pilot-gate ' + (Number(r.errors) ? 'is-blocked' : 'is-review') + '"><div class="font-semibold">' + (Number(r.errors) ? 'Rollout blocked by critical errors' : 'Pilot gate: critical errors clear') + '</div><div class="text-[12px] mt-1">' + (Number(r.errors) ? 'Fix critical errors in Inventory before QR printing or pilot use.' : 'Warnings still need owner decisions in Readiness_Warning_Triage before full rollout. Sample labels can proceed only after scan testing passes.') + '</div></div>' +
@@ -1057,6 +1076,43 @@
     }
     html += '</div>';
     return html;
+  }
+
+  function renderScannerVerificationPanel() {
+    var target = scannerTargetUrl();
+    var scanner = standaloneScannerUrl();
+    var selfTest = scannerSelfTestUrl();
+    var targetOk = !!target && target.indexOf('googleusercontent.com') === -1 && target.indexOf('accounts.google.com') === -1 && target.indexOf('www.google.com') === -1;
+    var scannerOk = !!configuredExternalScannerUrl();
+    var html = '<div class="card rounded-2xl p-4 space-y-3">' +
+      '<div><div class="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-blue-700">Scanner evidence gate</div>' +
+      '<h2 class="font-display text-[22px] font-semibold text-slate-900 mt-1">Prove the scanner route before pilot use</h2>' +
+      '<p class="text-[14px] text-slate-600 mt-1">Use this page before staff training or pilot replay. It verifies that Scan QR leaves the Apps Script frame, uses the standalone HTTPS scanner, and returns to the inventory app in View Mode.</p></div>' +
+      '<div class="grid md:grid-cols-3 gap-2">' +
+      scannerCheckCard(scannerOk, 'Standalone scanner', scannerOk ? 'Configured / default available' : 'Missing scanner URL') +
+      scannerCheckCard(targetOk, 'Return target', targetOk ? 'Canonical /exec target selected' : 'No safe /exec target found') +
+      scannerCheckCard(true, 'Update Mode', 'Scanner strips mode=tech') +
+      '</div>' +
+      '<div class="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">' +
+      '<div class="text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">Scanner URL</div>' +
+      '<div class="font-mono text-[12px] break-all text-slate-700">' + esc(scanner || 'Not available') + '</div>' +
+      '<div class="text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500 pt-2">Return target</div>' +
+      '<div class="font-mono text-[12px] break-all ' + (targetOk ? 'text-emerald-700' : 'text-red-700') + '">' + esc(target || 'No safe target found') + '</div>' +
+      '</div>' +
+      '<div class="grid md:grid-cols-2 gap-2">' +
+      (selfTest ? '<a href="' + esc(selfTest) + '" target="_top" rel="noopener noreferrer" class="btn btn-primary justify-center">' + icon('shield', 15) + ' Open no-camera self-test</a>' : '<button disabled class="btn btn-secondary opacity-60">' + icon('warn', 15) + ' Self-test unavailable</button>') +
+      (scanner ? '<a href="' + esc(scanner) + '" target="_top" rel="noopener noreferrer" class="btn btn-secondary justify-center">' + icon('scan', 15) + ' Open camera scanner</a>' : '<button disabled class="btn btn-secondary opacity-60">' + icon('scan', 15) + ' Scanner unavailable</button>') +
+      '</div>' +
+      '<div class="pilot-gate ' + (targetOk && scannerOk ? 'is-review' : 'is-blocked') + '"><div class="font-semibold">' + (targetOk && scannerOk ? 'Scanner route is ready for phone evidence' : 'Scanner route needs configuration') + '</div>' +
+      '<div class="text-[12px] mt-1">' + (targetOk && scannerOk ? 'Open the self-test first. It should show “Passed: resolves to View Mode”. Then test the camera scanner on a real phone.' : 'Set WEB_APP_BASE_URL / scanner configuration before training or sample QR scanning.') + '</div></div>' +
+      '</div>';
+    return html;
+  }
+
+  function scannerCheckCard(ok, title, value) {
+    return '<div class="rounded-2xl border ' + (ok ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-red-200 bg-red-50 text-red-900') + ' px-3 py-3">' +
+      '<div class="flex items-center gap-2 text-[13px] font-semibold">' + (ok ? icon('shield', 14) : icon('warn', 14)) + esc(title) + '</div>' +
+      '<div class="text-[12px] mt-1">' + esc(value) + '</div></div>';
   }
 
   function adminTab(name, label, active) {
@@ -1948,7 +2004,7 @@
     } else if (action === 'admin') {
       updateUrl({ admin: 'readiness' });
       setRoute({ name: 'admin', admin: 'readiness' });
-    } else if (action === 'admin-readiness' || action === 'admin-diagnostics') {
+    } else if (action === 'admin-readiness' || action === 'admin-diagnostics' || action === 'admin-scanner') {
       var adminName = action.replace('admin-', '');
       updateUrl({ admin: adminName });
       setRoute({ name: 'admin', admin: adminName });
