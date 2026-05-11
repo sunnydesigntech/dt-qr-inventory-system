@@ -581,6 +581,9 @@ function buildClientPayload_(params) {
   const safeParams = params || {};
   try {
     const webAppBaseUrl = getWebAppBaseUrl_({ silent: true });
+    if (safeParams.admin === 'scanner') {
+      return buildScannerCheckPayload_(webAppBaseUrl);
+    }
     const needsDiagnostics = safeParams.admin === 'diagnostics' || safeParams.admin === 'readiness';
     const dataset = getInventoryDataset_();
     const validation = safeParams.admin === 'readiness' ? validateInventoryData_() : null;
@@ -604,6 +607,20 @@ function buildClientPayload_(params) {
   } catch (err) {
     return buildClientErrorPayload_(safeParams, err);
   }
+}
+
+function buildScannerCheckPayload_(webAppBaseUrl) {
+  return {
+    appTitle: CONFIG.APP_TITLE,
+    webAppBaseUrl: webAppBaseUrl || '',
+    externalScannerUrl: getExternalScannerUrl_({ silent: true }),
+    route: { name: 'admin', admin: 'scanner' },
+    error: '',
+    warnings: webAppBaseUrl ? [] : ['WEB_APP_BASE_URL is not configured. Scanner check can still use the current /exec URL as its return target.'],
+    updateAuth: getUpdateAuthClientStateSafe_(),
+    diagnostics: buildClientDiagnostics_(getDiagnosticsSafe_()),
+    appData: buildEmptyClientAppData_()
+  };
 }
 
 function buildClientErrorPayload_(params, err) {

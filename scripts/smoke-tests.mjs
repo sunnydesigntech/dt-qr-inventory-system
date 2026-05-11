@@ -281,6 +281,13 @@ assert.match(appScript, /!externalScanner \? '<button data-action="scanner-start
 
 const codeGs = readFileSync(new URL('../code.gs', import.meta.url), 'utf8');
 assert.match(codeGs, /params\.admin === 'scanner'/);
+assert.match(codeGs, /function buildScannerCheckPayload_/);
+assert.ok(
+  codeGs.indexOf("safeParams.admin === 'scanner'") !== -1 &&
+  codeGs.indexOf("safeParams.admin === 'scanner'") < codeGs.indexOf('const dataset = getInventoryDataset_();'),
+  'scanner admin route should return before reading Inventory dataset'
+);
+assert.match(codeGs, /route: \{ name: 'admin', admin: 'scanner' \}/);
 
 const rows = [
   { itemId: '', itemName: '', category: 'Storage', remarks: 'Placeholder row for QR/location page', isPlaceholder: 'TRUE' },

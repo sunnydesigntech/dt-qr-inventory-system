@@ -427,6 +427,14 @@ Post-deploy smoke tests:
 
 ## Release Log
 
+### 2026-05-11 11:03 HKT
+
+- Version: `@47`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: made the Scanner check evidence page independent of the Inventory spreadsheet. `/exec?admin=scanner` now renders before any Sheet read, so it remains available even if `SPREADSHEET_ID` is missing or the Inventory sheet is temporarily misconfigured.
+- Rollback note: version `@46` remains the first scanner evidence gate.
+
 ### 2026-05-11 10:52 HKT
 
 - Version: `@46`
