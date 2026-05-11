@@ -100,6 +100,33 @@ function buildExternalScannerLaunchUrl(scannerUrl, targetUrl) {
   return url.href;
 }
 
+function scannerTargetCandidate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname || '';
+    if (host.includes('googleusercontent.com') || host === 'accounts.google.com' || host === 'www.google.com') return '';
+    if (host === 'script.google.com' && !path.includes('/macros/')) return '';
+    ['room', 'loc', 'mode', 'admin', 'printer', 'scanner', 'scan', 'topscanner', 'label'].forEach((key) => {
+      url.searchParams.delete(key);
+    });
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
+function scannerTargetUrl(...candidates) {
+  for (const candidate of candidates) {
+    const target = scannerTargetCandidate(candidate);
+    if (target) return target;
+  }
+  return '';
+}
+
 function stripScannerParams(currentUrl, room, loc) {
   const url = new URL(currentUrl);
   ['room', 'loc', 'mode', 'admin', 'printer', 'scanner', 'scan', 'topscanner'].forEach((key) => url.searchParams.delete(key));
@@ -213,6 +240,15 @@ const externalScannerLaunch = buildExternalScannerLaunchUrl(
 assert.match(externalScannerLaunch, /^https:\/\/sunnydesigntech\.github\.io\/dt-qr-inventory-system\/scanner\/?\?/);
 assert.match(externalScannerLaunch, /target=https%3A%2F%2Fscript\.google\.com%2Fmacros%2Fs%2FDEPLOYMENT%2Fexec/);
 assert.doesNotMatch(externalScannerLaunch, /mode=tech/);
+assert.equal(
+  scannerTargetUrl('', 'https://n-abc-script.googleusercontent.com/userCodeAppPanel?room=419A&loc=419A-FCU-01', `${DEPLOYED_EXEC}?room=419A&loc=419A-FCU-01&mode=tech`),
+  DEPLOYED_EXEC
+);
+assert.equal(
+  scannerTargetUrl('https://www.google.com/a/example/ServiceLogin?continue=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FDEPLOYMENT%2Fexec', `${DEPLOYED_EXEC}?admin=labels`),
+  DEPLOYED_EXEC
+);
+assert.equal(scannerTargetUrl('https://n-abc-script.googleusercontent.com/userCodeAppPanel'), '');
 
 const scannerHtml = readFileSync(new URL('../scanner/index.html', import.meta.url), 'utf8');
 assert.match(scannerHtml, /Camera scanner/);
@@ -226,6 +262,9 @@ assert.doesNotMatch(scannerHtml, /SPREADSHEET_ID|AKfyc|1GqK9/);
 const appScript = readFileSync(new URL('../app_script.html', import.meta.url), 'utf8');
 assert.match(appScript, /DEFAULT_EXTERNAL_SCANNER_URL = 'https:\/\/sunnydesigntech\.github\.io\/dt-qr-inventory-system\/scanner\/'/);
 assert.match(appScript, /var raw = textValue\(BOOT\.externalScannerUrl\) \|\| DEFAULT_EXTERNAL_SCANNER_URL;/);
+assert.match(appScript, /function scannerTargetUrl/);
+assert.match(appScript, /function scannerTargetCandidate/);
+assert.match(appScript, /googleusercontent\.com/);
 assert.match(appScript, /function openScanner\(\)[\s\S]*configuredExternalScannerUrl\(\)[\s\S]*openStandaloneScanner\(\{/);
 assert.match(appScript, /function openStandaloneScanner\(options\)[\s\S]*return true;[\s\S]*return false;/);
 assert.match(appScript, /openStandaloneScanner\(\{ sameTab: true \}\)/);

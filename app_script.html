@@ -179,18 +179,7 @@
     if (external) {
       try {
         var scannerUrl = new URL(external);
-        var target = textValue(BOOT.webAppBaseUrl);
-        if (!target) {
-          try {
-            var current = new URL(window.location.href);
-            ['room', 'loc', 'mode', 'admin', 'printer', 'scanner', 'scan', 'topscanner'].forEach(function (key) {
-              current.searchParams.delete(key);
-            });
-            target = current.toString();
-          } catch (targetErr) {
-            target = '';
-          }
-        }
+        var target = scannerTargetUrl();
         if (target) scannerUrl.searchParams.set('target', target);
         scannerUrl.searchParams.set('source', 'apps-script');
         return scannerUrl.toString();
@@ -213,6 +202,34 @@
       } catch (innerErr) {
         return '';
       }
+    }
+  }
+
+  function scannerTargetUrl() {
+    return scannerTargetCandidate(BOOT.webAppBaseUrl) ||
+      scannerTargetCandidate(window.location.href) ||
+      scannerTargetCandidate(document.referrer) ||
+      '';
+  }
+
+  function scannerTargetCandidate(value) {
+    var raw = textValue(value);
+    if (!raw) return '';
+    try {
+      var url = new URL(raw);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+      var host = url.hostname.toLowerCase();
+      var path = url.pathname || '';
+      if (host.indexOf('googleusercontent.com') !== -1 || host === 'accounts.google.com' || host === 'www.google.com') {
+        return '';
+      }
+      if (host === 'script.google.com' && path.indexOf('/macros/') === -1) return '';
+      ['room', 'loc', 'mode', 'admin', 'printer', 'scanner', 'scan', 'topscanner', 'label'].forEach(function (key) {
+        url.searchParams.delete(key);
+      });
+      return url.toString();
+    } catch (err) {
+      return '';
     }
   }
 

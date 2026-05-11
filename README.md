@@ -427,6 +427,14 @@ Post-deploy smoke tests:
 
 ## Release Log
 
+### 2026-05-11 10:46 HKT
+
+- Version: `@45`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: hardened the standalone scanner launch target so it refuses Apps Script frame URLs (`googleusercontent.com`) and Google login URLs, then falls back to the canonical `/exec` URL from bootstrap or referrer. This keeps scanner returns on the proper inventory web-app route instead of routing users back into the blocked iframe context.
+- Rollback note: version `@44` remains the external-first scanner fallback.
+
 ### 2026-05-11 08:47 HKT
 
 - Version: `@44`
