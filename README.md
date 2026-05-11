@@ -64,7 +64,7 @@ Current web app deployment ID:
 Current deployed version:
 
 ```text
-@42 - Scanner same-tab handoff
+@43 - Scanner top-level link handoff
 ```
 
 Current web app URL:
@@ -234,7 +234,7 @@ Recommended Brother driver settings:
 
 ## In-App QR Scanner
 
-The mobile landing page and top bars include a `Scan QR` action. When `EXTERNAL_SCANNER_URL` is configured, this action navigates the current tab to the standalone HTTPS scanner first so camera permission is requested outside the Apps Script iframe without relying on a popup/new-tab handoff. The in-app scanner modal remains as a fallback for manual entry, QR photo upload, and pasted QR URLs when no external scanner is configured. The scanner uses the browser camera over HTTPS and tries the native `BarcodeDetector` API first. Where native QR detection is unavailable, it loads `jsQR` from the jsDelivr CDN (`https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js`) as a lightweight fallback.
+The mobile landing page and top bars include a `Scan QR` action. When `EXTERNAL_SCANNER_URL` is configured, visible Scan QR controls render as real links with `target="_top"` to the standalone HTTPS scanner, so camera permission is requested outside the Apps Script iframe without relying on a popup/new-tab handoff. The in-app scanner modal remains as a fallback for manual entry, QR photo upload, and pasted QR URLs when no external scanner is configured. The scanner uses the browser camera over HTTPS and tries the native `BarcodeDetector` API first. Where native QR detection is unavailable, it loads `jsQR` from the jsDelivr CDN (`https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js`) as a lightweight fallback.
 
 Camera access is not hosted by Apps Script. Google Apps Script HtmlService runs inside a browser frame, and some browsers or device policies block `getUserMedia()` even on the deployed HTTPS `/exec` URL. The app therefore opens a small top-level HTTPS scanner page first. The default scanner URL is:
 
@@ -426,6 +426,14 @@ Post-deploy smoke tests:
 7. Run `Build QR Label Sheet` and spot-check a generated QR image/link.
 
 ## Release Log
+
+### 2026-05-11 08:27 HKT
+
+- Version: `@43`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: changed visible Scan QR controls to render as real `target="_top"` links to the standalone HTTPS scanner when `EXTERNAL_SCANNER_URL` is configured. This gives the browser a user-activated top-level navigation path out of the Apps Script iframe before camera permission is requested, while retaining the in-app scanner modal as fallback when no external scanner is configured.
+- Rollback note: version `@42` remains the same-tab JavaScript scanner handoff fallback.
 
 ### 2026-05-11 08:21 HKT
 

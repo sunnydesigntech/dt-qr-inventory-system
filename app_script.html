@@ -301,6 +301,15 @@
     return '<svg ' + s + ' viewBox="0 0 24 24">' + path + '</svg>';
   }
 
+  function scannerActionHtml(classes, innerHtml, title) {
+    var href = configuredExternalScannerUrl() ? standaloneScannerUrl() : '';
+    var safeTitle = title || 'Scan QR';
+    if (href) {
+      return '<a href="' + esc(href) + '" target="_top" rel="noopener noreferrer" data-scanner-link="external" class="' + classes + '" title="' + esc(safeTitle) + '">' + innerHtml + '</a>';
+    }
+    return '<button data-action="open-scanner" class="' + classes + '" title="' + esc(safeTitle) + '">' + innerHtml + '</button>';
+  }
+
   function statusPill(status) {
     var key = String(status || 'Good');
     var cfg = {
@@ -637,7 +646,7 @@
     html += '<div class="text-[10.5px] font-semibold uppercase tracking-[0.2em] text-blue-700">Victoria Shanghai Academy</div>';
     html += '<h1 class="font-display text-[19px] font-semibold text-slate-900 mt-0.5">D&amp;T QR Inventory</h1>';
     html += '</div><div class="flex items-center gap-1.5">';
-    html += '<button data-action="open-scanner" class="tap rounded-lg bg-blue-600 text-white flex items-center justify-center" title="Scan QR">' + icon('scan', 20) + '</button>';
+    html += scannerActionHtml('tap rounded-lg bg-blue-600 text-white flex items-center justify-center', icon('scan', 20), 'Scan QR');
     html += '<button data-action="labels" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600" title="QR Labels">' + icon('printer', 20) + '</button>';
     html += '<button data-action="admin" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-600" title="Admin readiness">' + icon('shield', 20) + '</button>';
     html += '</div></div></div>';
@@ -649,7 +658,7 @@
     }
 
     html += '<div class="mobile-scan-panel mx-3 mt-3">' +
-      '<button data-action="open-scanner" class="scan-primary-btn">' + icon('scan', 22) + '<span><strong>Scan QR</strong><small>Open a storage label</small></span></button>' +
+      scannerActionHtml('scan-primary-btn', icon('scan', 22) + '<span><strong>Scan QR</strong><small>Open a storage label</small></span>', 'Scan QR') +
       '<button data-action="focus-search" class="scan-secondary-btn">' + icon('search', 18) + '<span>Search storage</span></button>' +
       '<div class="mobile-scan-help">Scan a storage label or search by Location Code, room, cupboard, or trolley.</div>' +
       '</div>';
@@ -665,7 +674,7 @@
       '<div><div class="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-blue-700">Workshop command</div>' +
       '<div class="font-display text-[15px] font-semibold text-slate-900 mt-1">Scan, verify, update, audit</div></div>' +
       '<div class="quick-action-grid">' +
-      '<button data-action="open-scanner" class="quick-action-btn">' + icon('scan', 15) + '<span>Scan QR</span></button>' +
+      scannerActionHtml('quick-action-btn', icon('scan', 15) + '<span>Scan QR</span>', 'Scan QR') +
       '<button data-action="storage" class="quick-action-btn">' + icon('grid', 15) + '<span>Storage Master</span></button>' +
       '<button data-action="labels" class="quick-action-btn">' + icon('printer', 15) + '<span>QR Labels</span></button>' +
       '<button data-action="admin" class="quick-action-btn">' + icon('shield', 15) + '<span>Readiness</span></button>' +
@@ -912,7 +921,7 @@
       (room.rollout ? '<span class="pill pill-teal" style="padding:2px 7px;font-size:10px">419A</span>' : '') + '</div>' +
       '<h1 class="font-display text-[18px] font-semibold text-slate-900 leading-tight truncate flex items-center gap-1.5">' + esc(loc.label) + (loc.hazard ? icon('hazard', 15, 'text-red-600') : '') + '</h1>' +
       (loc.specific ? '<div class="text-[12px] text-slate-500 mt-0.5 truncate">' + esc(loc.specific) + '</div>' : '') + '</div>' +
-      '<button data-action="open-scanner" class="context-scan-btn tap rounded-lg bg-blue-600 text-white flex items-center justify-center" title="Scan QR">' + icon('scan', 17) + '</button>' +
+      scannerActionHtml('context-scan-btn tap rounded-lg bg-blue-600 text-white flex items-center justify-center', icon('scan', 17), 'Scan QR') +
       modeBadge(route.mode) + '</div><div class="mt-2.5 flex flex-wrap items-center gap-1.5">' +
       (routeId ? '<span class="route-badge"><span>' + esc(routeIdentityLabel(loc)) + '</span><strong>' + esc(routeId) + '</strong></span>' : '') +
       (loc.storageType ? '<span class="pill pill-neutral">' + esc(loc.storageType) + '</span>' : '') +
@@ -1297,7 +1306,7 @@
   }
 
   function topBar(title, right) {
-    return '<div class="topbar px-2 py-2 bg-white border-b border-slate-200 flex items-center gap-1 sticky top-0 z-10"><button data-action="back" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-700">' + icon('arrow-left', 20) + '</button><div class="topbar-title flex-1 text-[13.5px] font-semibold text-slate-900 truncate">' + esc(title) + '</div><button data-action="open-scanner" class="tap rounded-lg hover:bg-blue-50 flex items-center justify-center text-blue-700" title="Scan QR">' + icon('scan', 18) + '</button>' + (right || '') + '</div>';
+    return '<div class="topbar px-2 py-2 bg-white border-b border-slate-200 flex items-center gap-1 sticky top-0 z-10"><button data-action="back" class="tap rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-700">' + icon('arrow-left', 20) + '</button><div class="topbar-title flex-1 text-[13.5px] font-semibold text-slate-900 truncate">' + esc(title) + '</div>' + scannerActionHtml('tap rounded-lg hover:bg-blue-50 flex items-center justify-center text-blue-700', icon('scan', 18), 'Scan QR') + (right || '') + '</div>';
   }
 
   function renderScannerDiagnostics() {

@@ -228,6 +228,9 @@ assert.match(appScript, /function openScanner\(\)[\s\S]*configuredExternalScanne
 assert.match(appScript, /function openStandaloneScanner\(options\)[\s\S]*return true;[\s\S]*return false;/);
 assert.match(appScript, /openStandaloneScanner\(\{ sameTab: true \}\)/);
 assert.match(appScript, /window\.location\.assign\(url\)/);
+assert.match(appScript, /function scannerActionHtml/);
+assert.match(appScript, /target="_top"/);
+assert.match(appScript, /data-scanner-link="external"/);
 
 const rows = [
   { itemId: '', itemName: '', category: 'Storage', remarks: 'Placeholder row for QR/location page', isPlaceholder: 'TRUE' },
