@@ -224,6 +224,8 @@ assert.match(scannerHtml, /Passed: resolves to View Mode/);
 assert.doesNotMatch(scannerHtml, /SPREADSHEET_ID|AKfyc|1GqK9/);
 
 const appScript = readFileSync(new URL('../app_script.html', import.meta.url), 'utf8');
+assert.match(appScript, /DEFAULT_EXTERNAL_SCANNER_URL = 'https:\/\/sunnydesigntech\.github\.io\/dt-qr-inventory-system\/scanner\/'/);
+assert.match(appScript, /var raw = textValue\(BOOT\.externalScannerUrl\) \|\| DEFAULT_EXTERNAL_SCANNER_URL;/);
 assert.match(appScript, /function openScanner\(\)[\s\S]*configuredExternalScannerUrl\(\)[\s\S]*openStandaloneScanner\(\{/);
 assert.match(appScript, /function openStandaloneScanner\(options\)[\s\S]*return true;[\s\S]*return false;/);
 assert.match(appScript, /openStandaloneScanner\(\{ sameTab: true \}\)/);
@@ -231,6 +233,8 @@ assert.match(appScript, /window\.location\.assign\(url\)/);
 assert.match(appScript, /function scannerActionHtml/);
 assert.match(appScript, /target="_top"/);
 assert.match(appScript, /data-scanner-link="external"/);
+assert.match(appScript, /Camera permission is requested in the standalone HTTPS scanner/);
+assert.match(appScript, /!externalScanner \? '<button data-action="scanner-start-camera"/);
 
 const rows = [
   { itemId: '', itemName: '', category: 'Storage', remarks: 'Placeholder row for QR/location page', isPlaceholder: 'TRUE' },

@@ -7,6 +7,7 @@
   var appData = BOOT.appData || emptyAppData();
   var diagnostics = BOOT.diagnostics || {};
   var route = initialRoute();
+  var DEFAULT_EXTERNAL_SCANNER_URL = 'https://sunnydesigntech.github.io/dt-qr-inventory-system/scanner/';
   var UPDATE_AUTH_STORAGE_KEY = 'dtInventoryUpdateAuthToken';
   var updateAuthToken = readSessionValue(UPDATE_AUTH_STORAGE_KEY);
   var localItems = [];
@@ -120,7 +121,7 @@
   }
 
   function configuredExternalScannerUrl() {
-    var raw = textValue(BOOT.externalScannerUrl);
+    var raw = textValue(BOOT.externalScannerUrl) || DEFAULT_EXTERNAL_SCANNER_URL;
     if (!raw || !/^https?:\/\//i.test(raw)) return '';
     try {
       var parsed = new URL(raw);
@@ -1383,12 +1384,12 @@
     }).join('');
     var cameraOverlay = scannerState.stream ? '' :
       '<div class="scanner-camera-prompt"><div class="scanner-camera-title">QR scanner</div>' +
-      '<div class="scanner-camera-copy">' + (externalScanner ? 'For reliable camera access, open the standalone HTTPS scanner. It scans the QR and returns to this inventory app in View Mode.' : (framed ? 'This scanner is inside the Apps Script frame, which can block camera permission. Open the full-screen scanner first, then allow camera access there.' : 'This full-screen scanner can request camera access directly. Tap Start camera and allow permission.')) + '</div>' +
+      '<div class="scanner-camera-copy">' + (externalScanner ? 'Camera permission is requested in the standalone HTTPS scanner, outside the Apps Script frame. It scans the QR and returns here in View Mode.' : (framed ? 'This scanner is inside the Apps Script frame, which can block camera permission. Open the full-screen scanner first, then allow camera access there.' : 'This full-screen scanner can request camera access directly. Tap Start camera and allow permission.')) + '</div>' +
       ((framed || externalScanner) ? '<button data-action="scanner-open-standalone" class="scanner-camera-start is-fullscreen">' + icon('external', 18) + (externalScanner ? ' Open camera scanner' : ' Open full-screen camera scanner') + '</button>' : '') +
-      '<button data-action="scanner-start-camera" class="scanner-camera-start' + (framed ? ' is-secondary' : '') + '">' + icon('scan', 18) + (framed ? ' Try camera here' : ' Start camera') + '</button>' +
+      (!externalScanner ? '<button data-action="scanner-start-camera" class="scanner-camera-start' + (framed ? ' is-secondary' : '') + '">' + icon('scan', 18) + (framed ? ' Try camera here' : ' Start camera') + '</button>' : '') +
       '<label class="scanner-camera-upload">' + icon('scan', 18) + ' Take QR photo<input id="scannerCameraInput" type="file" accept="image/*" capture="environment"/></label></div>';
     var standaloneHelp = scannerState.standaloneUrl ?
-      '<div class="scanner-standalone-link">If the new tab did not open, use this link:<a href="' + esc(scannerState.standaloneUrl) + '" target="_blank" rel="noopener noreferrer">Open full-screen scanner</a><span>' + esc(scannerState.standaloneUrl) + '</span></div>' : '';
+      '<div class="scanner-standalone-link">If the scanner did not open, use this link:<a href="' + esc(scannerState.standaloneUrl) + '" target="_top" rel="noopener noreferrer">Open camera scanner</a><span>' + esc(scannerState.standaloneUrl) + '</span></div>' : '';
     return '<div class="scanner-overlay" role="dialog" aria-modal="true" aria-label="QR scanner">' +
       '<div class="scanner-sheet">' +
       '<div class="scanner-header"><div><div class="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-blue-700">D&amp;T Inventory</div><h2 class="font-display text-[18px] font-semibold text-slate-900">Scan storage QR</h2></div><button data-action="close-scanner" class="tap rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">' + icon('minus', 18) + '</button></div>' +
