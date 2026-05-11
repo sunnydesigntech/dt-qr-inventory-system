@@ -185,6 +185,43 @@
       background: var(--amber-bg);
       color: var(--amber);
     }
+    .diagnostics {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #f8fafc;
+      padding: 11px 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .diagnostics summary {
+      cursor: pointer;
+      font-weight: 900;
+      color: #1e293b;
+    }
+    .diagnostics-grid {
+      display: grid;
+      gap: 6px;
+      font-size: 14px;
+      color: #475569;
+    }
+    .diagnostics-grid div {
+      display: grid;
+      grid-template-columns: minmax(8rem, .8fr) 1.2fr;
+      gap: 8px;
+      align-items: start;
+      overflow-wrap: anywhere;
+    }
+    .diagnostics-grid strong {
+      color: #0f172a;
+    }
+    .diagnostics button {
+      min-height: 42px;
+      width: fit-content;
+      padding: 9px 12px;
+      font-size: 14px;
+      border-radius: 12px;
+      box-shadow: none;
+    }
     .manual {
       display: grid;
       gap: 10px;
@@ -365,6 +402,11 @@
       </div>
       <div class="content">
         <div id="status" class="status">Waiting for camera permission.</div>
+        <details id="diagnosticsPanel" class="diagnostics">
+          <summary>Camera diagnostics</summary>
+          <div id="diagnosticsGrid" class="diagnostics-grid"></div>
+          <button id="copyDiagnosticsBtn" class="secondary" type="button">Copy diagnostics</button>
+        </details>
 
         <div class="manual">
           <label>Paste QR URL or enter Location Code
@@ -416,6 +458,9 @@
     var canvas = document.getElementById('canvas');
     var cameraState = document.getElementById('cameraState');
     var statusEl = document.getElementById('status');
+    var diagnosticsGrid = document.getElementById('diagnosticsGrid');
+    var diagnosticsPanel = document.getElementById('diagnosticsPanel');
+    var copyDiagnosticsBtn = document.getElementById('copyDiagnosticsBtn');
     var startBtn = document.getElementById('startBtn');
     var imageInput = document.getElementById('imageInput');
     var manualInput = document.getElementById('manualInput');
@@ -432,6 +477,8 @@
     var stream = null;
     var raf = 0;
     var detector = null;
+    var lastCameraError = '';
+    var permissionState = 'not checked';
 
     function text(value) {
       return String(value == null ? '' : value).trim();
@@ -483,6 +530,120 @@
     function setStatus(message, kind) {
       statusEl.textContent = message;
       statusEl.className = 'status' + (kind ? ' ' + kind : '');
+    }
+
+    function framedState() {
+      try {
+        return window.self !== window.top ? 'yes' : 'no';
+      } catch (err) {
+        return 'unknown';
+      }
+    }
+
+    function collectCameraDiagnostics() {
+      return {
+        secureContext: window.isSecureContext ? 'yes' : 'no',
+        topLevelPage: framedState() === 'no' ? 'yes' : 'no',
+        frameDetected: framedState(),
+        mediaDevices: navigator.mediaDevices ? 'available' : 'missing',
+        getUserMedia: navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? 'available' : 'missing',
+        cameraPermission: permissionState,
+        lastCameraError: lastCameraError || '-',
+        pageUrl: window.location.href,
+        platform: navigator.platform || '-',
+        userAgent: navigator.userAgent || '-'
+      };
+    }
+
+    function renderDiagnostics() {
+      var diag = collectCameraDiagnostics();
+      var rows = [
+        ['Secure HTTPS context', diag.secureContext],
+        ['Top-level page', diag.topLevelPage],
+        ['Frame detected', diag.frameDetected],
+        ['mediaDevices', diag.mediaDevices],
+        ['getUserMedia', diag.getUserMedia],
+        ['Camera permission', diag.cameraPermission],
+        ['Last camera error', diag.lastCameraError],
+        ['Page URL', diag.pageUrl],
+        ['Platform', diag.platform],
+        ['User agent', diag.userAgent]
+      ];
+      diagnosticsGrid.innerHTML = rows.map(function (row) {
+        return '<div><strong>' + esc(row[0]) + '</strong><span>' + esc(row[1]) + '</span></div>';
+      }).join('');
+    }
+
+    function cameraDiagnosticsReport() {
+      var diag = collectCameraDiagnostics();
+      return [
+        'D&T QR Inventory standalone scanner diagnostics',
+        'Timestamp: ' + new Date().toISOString(),
+        'Secure HTTPS context: ' + diag.secureContext,
+        'Top-level page: ' + diag.topLevelPage,
+        'Frame detected: ' + diag.frameDetected,
+        'mediaDevices: ' + diag.mediaDevices,
+        'getUserMedia: ' + diag.getUserMedia,
+        'Camera permission: ' + diag.cameraPermission,
+        'Last camera error: ' + diag.lastCameraError,
+        'Page URL: ' + diag.pageUrl,
+        'Platform: ' + diag.platform,
+        'User agent: ' + diag.userAgent,
+        'Expected when working: status becomes "Scanning. Hold the storage label inside the square."',
+        'Phone result: [pass/fail]',
+        'Notes / follow-up owner: [enter details]'
+      ].join('\n');
+    }
+
+    function copyText(value) {
+      if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(value);
+      return new Promise(function (resolve, reject) {
+        try {
+          var area = document.createElement('textarea');
+          area.value = value;
+          area.setAttribute('readonly', '');
+          area.style.position = 'fixed';
+          area.style.left = '-9999px';
+          document.body.appendChild(area);
+          area.select();
+          var ok = document.execCommand('copy');
+          document.body.removeChild(area);
+          ok ? resolve() : reject(new Error('copy failed'));
+        } catch (err) {
+          reject(err);
+        }
+      });
+    }
+
+    function copyDiagnostics() {
+      copyText(cameraDiagnosticsReport()).then(function () {
+        setStatus('Camera diagnostics copied. Paste them into the scanner evidence report or PILOT_TEST_LOG.', 'warn');
+      }).catch(function () {
+        setStatus('Could not copy diagnostics automatically. Expand Camera diagnostics and record the values manually.', 'error');
+      });
+    }
+
+    function refreshPermissionState() {
+      renderDiagnostics();
+      if (!(navigator.permissions && navigator.permissions.query)) return;
+      try {
+        navigator.permissions.query({ name: 'camera' }).then(function (status) {
+          permissionState = status && status.state ? status.state : 'unknown';
+          renderDiagnostics();
+          if (status && status.addEventListener) {
+            status.addEventListener('change', function () {
+              permissionState = status.state || 'unknown';
+              renderDiagnostics();
+            });
+          }
+        }).catch(function (err) {
+          permissionState = 'unavailable' + (err && err.name ? ' (' + err.name + ')' : '');
+          renderDiagnostics();
+        });
+      } catch (err) {
+        permissionState = 'unavailable' + (err && err.name ? ' (' + err.name + ')' : '');
+        renderDiagnostics();
+      }
     }
 
     function updateTargetBox() {
@@ -660,12 +821,20 @@
 
     function startCamera() {
       if (stream) return;
+      lastCameraError = '';
+      refreshPermissionState();
       if (!window.isSecureContext) {
+        lastCameraError = 'insecure context';
         setStatus('Camera requires HTTPS. Open this scanner from its https:// GitHub Pages URL.', 'error');
+        diagnosticsPanel.open = true;
+        renderDiagnostics();
         return;
       }
       if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+        lastCameraError = 'mediaDevices/getUserMedia unavailable';
         setStatus('This browser does not expose camera access. Use Take QR photo or paste the QR URL.', 'error');
+        diagnosticsPanel.open = true;
+        renderDiagnostics();
         return;
       }
       setStatus('Requesting camera permission...');
@@ -676,6 +845,9 @@
         stream = nextStream;
         video.srcObject = stream;
         cameraState.style.display = 'none';
+        lastCameraError = '';
+        permissionState = 'granted';
+        renderDiagnostics();
         setStatus('Scanning. Hold the storage label inside the square.');
         return video.play();
       }).then(function () {
@@ -683,6 +855,9 @@
       }).catch(function (err) {
         var name = err && err.name ? err.name : 'CameraError';
         var message = err && err.message ? ': ' + err.message : '';
+        lastCameraError = name + message;
+        refreshPermissionState();
+        diagnosticsPanel.open = true;
         setStatus(name + message + '. Use Take QR photo, paste the QR URL, or check browser camera permission.', 'error');
       });
     }
@@ -785,6 +960,7 @@
     }
 
     startBtn.addEventListener('click', startCamera);
+    copyDiagnosticsBtn.addEventListener('click', copyDiagnostics);
     imageInput.addEventListener('change', function () {
       decodeImage(imageInput.files && imageInput.files[0]);
       imageInput.value = '';
@@ -828,6 +1004,7 @@
     window.addEventListener('pagehide', stopCamera);
 
     updateTargetBox();
+    refreshPermissionState();
     initSelfTest();
     if (!targetBase) setStatus('No inventory target was supplied. Open this scanner from the D&T Inventory app, or paste a full QR URL.', 'warn');
   })();
