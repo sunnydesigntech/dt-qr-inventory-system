@@ -250,6 +250,20 @@ For no-camera QA, open the scanner with `selftest=1` and a `target` URL. This do
 https://sunnydesigntech.github.io/dt-qr-inventory-system/scanner/?target=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FYOUR_DEPLOYMENT_ID%2Fexec&selftest=1
 ```
 
+For browser-level camera QA, run the scanner smoke test with Playwright and a fake camera:
+
+```sh
+node scripts/scanner-camera-smoke.mjs
+```
+
+If Playwright is not installed in the repo, install it locally for the test or point the script at an existing install:
+
+```sh
+PLAYWRIGHT_NODE_MODULES=/path/to/node_modules node scripts/scanner-camera-smoke.mjs
+```
+
+This opens the public scanner as a top-level HTTPS page, grants camera permission in Chromium/Chrome, uses a fake camera device, clicks `Start camera`, and fails if the page cannot reach the scanning state. It does not access the live Google Sheet and does not prove a specific phone's camera permission setting; it proves the scanner page can start a camera stream when the browser allows it.
+
 If camera access is still blocked, the scanner remains usable through fallbacks:
 
 1. Open the camera scanner, tap `Start camera`, and allow camera permission.
@@ -426,6 +440,11 @@ Post-deploy smoke tests:
 7. Run `Build QR Label Sheet` and spot-check a generated QR image/link.
 
 ## Release Log
+
+### 2026-05-11 11:20 HKT
+
+- Version: not deployed
+- Summary: added `scripts/scanner-camera-smoke.mjs`, a Playwright-based fake-camera smoke test for the standalone scanner. This gives a repeatable browser-level proof that the public scanner can start a camera stream when permission is granted, separate from Apps Script iframe limits or individual phone permission settings.
 
 ### 2026-05-11 11:12 HKT
 

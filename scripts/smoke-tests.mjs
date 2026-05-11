@@ -259,6 +259,16 @@ assert.match(scannerHtml, /data-selftest-index/);
 assert.match(scannerHtml, /Passed: resolves to View Mode/);
 assert.doesNotMatch(scannerHtml, /SPREADSHEET_ID|AKfyc|1GqK9/);
 
+const scannerCameraSmoke = readFileSync(new URL('../scripts/scanner-camera-smoke.mjs', import.meta.url), 'utf8');
+assert.match(scannerCameraSmoke, /--use-fake-ui-for-media-stream/);
+assert.match(scannerCameraSmoke, /--use-fake-device-for-media-stream/);
+assert.match(scannerCameraSmoke, /createRequire/);
+assert.match(scannerCameraSmoke, /PLAYWRIGHT_NODE_MODULES/);
+assert.doesNotMatch(scannerCameraSmoke, /\/Users\/wcchun/);
+assert.match(scannerCameraSmoke, /grantPermissions\(\['camera'\]/);
+assert.match(scannerCameraSmoke, /#startBtn/);
+assert.match(scannerCameraSmoke, /Scanning/i);
+
 const appScript = readFileSync(new URL('../app_script.html', import.meta.url), 'utf8');
 assert.match(appScript, /DEFAULT_EXTERNAL_SCANNER_URL = 'https:\/\/sunnydesigntech\.github\.io\/dt-qr-inventory-system\/scanner\/'/);
 assert.match(appScript, /var raw = textValue\(BOOT\.externalScannerUrl\) \|\| DEFAULT_EXTERNAL_SCANNER_URL;/);
