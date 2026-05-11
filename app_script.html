@@ -16,6 +16,7 @@
   var saveMessage = '';
   var addFormOpen = false;
   var toolsOpen = false;
+  var scannerEvidenceMessage = '';
   var scannerState = {
     open: false,
     status: 'idle',
@@ -1102,11 +1103,67 @@
       '<div class="grid md:grid-cols-2 gap-2">' +
       (selfTest ? '<a href="' + esc(selfTest) + '" target="_top" rel="noopener noreferrer" class="btn btn-primary justify-center">' + icon('shield', 15) + ' Open no-camera self-test</a>' : '<button disabled class="btn btn-secondary opacity-60">' + icon('warn', 15) + ' Self-test unavailable</button>') +
       (scanner ? '<a href="' + esc(scanner) + '" target="_top" rel="noopener noreferrer" class="btn btn-secondary justify-center">' + icon('scan', 15) + ' Open camera scanner</a>' : '<button disabled class="btn btn-secondary opacity-60">' + icon('scan', 15) + ' Scanner unavailable</button>') +
+      '<button data-action="scanner-copy-report" class="btn btn-secondary justify-center md:col-span-2">' + icon('list', 15) + ' Copy scanner evidence report</button>' +
       '</div>' +
+      (scannerEvidenceMessage ? '<div class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-[12.5px] text-blue-900">' + esc(scannerEvidenceMessage) + '</div>' : '') +
       '<div class="pilot-gate ' + (targetOk && scannerOk ? 'is-review' : 'is-blocked') + '"><div class="font-semibold">' + (targetOk && scannerOk ? 'Scanner route is ready for phone evidence' : 'Scanner route needs configuration') + '</div>' +
       '<div class="text-[12px] mt-1">' + (targetOk && scannerOk ? 'Open the self-test first. It should show “Passed: resolves to View Mode”. Then test the camera scanner on a real phone.' : 'Set WEB_APP_BASE_URL / scanner configuration before training or sample QR scanning.') + '</div></div>' +
       '</div>';
     return html;
+  }
+
+  function scannerEvidenceReport() {
+    var target = scannerTargetUrl();
+    var scanner = standaloneScannerUrl();
+    var selfTest = scannerSelfTestUrl();
+    var targetOk = !!target && target.indexOf('googleusercontent.com') === -1 && target.indexOf('accounts.google.com') === -1 && target.indexOf('www.google.com') === -1;
+    return [
+      'D&T QR Inventory scanner evidence',
+      'Timestamp: ' + new Date().toISOString(),
+      'App route: ' + (window.location.href || '-'),
+      'Standalone scanner available: ' + (configuredExternalScannerUrl() ? 'yes' : 'no'),
+      'Return target safe: ' + (targetOk ? 'yes' : 'no'),
+      'Return target: ' + (target || '-'),
+      'Scanner URL: ' + (scanner || '-'),
+      'No-camera self-test URL: ' + (selfTest || '-'),
+      'Expected self-test result: Passed: resolves to View Mode; mode=tech stripped',
+      'Phone camera result: [pass/fail]',
+      'Scanned storage code: [enter code]',
+      'Opened View Mode by default: [yes/no]',
+      'Issue / follow-up owner: [enter details]'
+    ].join('\n');
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      try {
+        var area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.left = '-9999px';
+        document.body.appendChild(area);
+        area.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(area);
+        ok ? resolve() : reject(new Error('copy failed'));
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  function copyScannerEvidenceReport() {
+    copyText(scannerEvidenceReport()).then(function () {
+      scannerEvidenceMessage = 'Scanner evidence report copied. Paste it into PILOT_TEST_LOG or your test notes after adding the phone result.';
+      render();
+    }).catch(function () {
+      scannerEvidenceMessage = 'Could not copy automatically. Open the self-test and record the scanner URL, return target, and phone result manually.';
+      render();
+    });
   }
 
   function scannerCheckCard(ok, title, value) {
@@ -2008,6 +2065,8 @@
       var adminName = action.replace('admin-', '');
       updateUrl({ admin: adminName });
       setRoute({ name: 'admin', admin: adminName });
+    } else if (action === 'scanner-copy-report') {
+      copyScannerEvidenceReport();
     }
     else if (action === 'back') goLanding();
     else if (action === 'toggle-mode') toggleMode();

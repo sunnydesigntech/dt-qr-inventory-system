@@ -427,6 +427,14 @@ Post-deploy smoke tests:
 
 ## Release Log
 
+### 2026-05-11 11:12 HKT
+
+- Version: `@48`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: added a client-only `Copy scanner evidence report` action to `/exec?admin=scanner`. It copies the scanner URL, safe return target, self-test URL, expected View Mode result, and blanks for the real phone result so pilot evidence can be pasted into `PILOT_TEST_LOG` or test notes without mutating the Sheet.
+- Rollback note: version `@47` remains the sheet-independent scanner evidence fallback.
+
 ### 2026-05-11 11:03 HKT
 
 - Version: `@47`
