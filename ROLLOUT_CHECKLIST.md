@@ -123,6 +123,7 @@ Each label preview includes `Print this label`, and the QR Labels page includes 
 - scanner workflow works: full-screen scanner can request camera where browser policy allows, and fallback works when camera remains blocked: native phone Camera scan, pasted QR URL, manual room/location entry, or QR image upload
 - external scanner page is online over HTTPS and redirects scanned QR labels back to the same `/exec?room=...&loc=...` View route
 - Update Mode authorization is configured and direct `?mode=tech` access alone cannot save/add/remove inventory
+- concurrent Update Mode saves are serialized; all changed rows validate before the first write, and no-op saves do not change metadata or append Audit_Log rows
 - Update Mode save works on a safe test row
 - at least one chemical cabinet page displays hazard styling
 - View Mode is understandable to students and teaching staff

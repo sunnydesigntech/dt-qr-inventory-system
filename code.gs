@@ -185,7 +185,7 @@ function openWebApp() {
 function menuRefreshQrLinks() {
   const ui = SpreadsheetApp.getUi();
   try {
-    const result = refreshQrLinks();
+    const result = refreshQrLinks_();
     ui.alert(
       'QR Links Refreshed',
       'Updated ' + result.updatedRows + ' row(s).\nSkipped ' + result.skippedRows + ' row(s) without room/location.\nBase URL: ' + result.baseUrl,
@@ -199,7 +199,7 @@ function menuRefreshQrLinks() {
 function menuRefreshQrImages() {
   const ui = SpreadsheetApp.getUi();
   try {
-    const result = refreshQrImages();
+    const result = refreshQrImages_();
     ui.alert('QR Images Refreshed', 'Updated ' + result.updatedRows + ' QR image formula(s).', ui.ButtonSet.OK);
   } catch (err) {
     ui.alert('QR Image Refresh Failed', err.message || String(err), ui.ButtonSet.OK);
@@ -225,7 +225,7 @@ function menuPrepareAppColumns() {
 function menuBuildStorageMasterSheet() {
   const ui = SpreadsheetApp.getUi();
   try {
-    const result = buildStorageMasterSheet();
+    const result = buildStorageMasterSheet_();
     ui.alert(
       'Storage Master Ready',
       'Created/updated "' + result.sheetName + '" with ' + result.storageCount + ' storage row(s).',
@@ -239,7 +239,7 @@ function menuBuildStorageMasterSheet() {
 function menuBuildQrLabelSheet() {
   const ui = SpreadsheetApp.getUi();
   try {
-    const result = buildQrLabelSheet();
+    const result = buildQrLabelSheet_();
     ui.alert(
       'QR Label Sheet Ready',
       'Created/updated "' + result.sheetName + '" with ' + result.labelCount + ' storage label row(s).',
@@ -253,7 +253,7 @@ function menuBuildQrLabelSheet() {
 function menuCreateReadinessReport() {
   const ui = SpreadsheetApp.getUi();
   try {
-    const result = createReadinessReport();
+    const result = createReadinessReport_();
     ui.alert(
       'Readiness Report Ready',
       'Created/updated "' + result.sheetName + '".\nIssues found: ' + result.issueCount + '\nWarnings: ' + result.warningCount + '\nErrors: ' + result.errorCount,
@@ -267,7 +267,7 @@ function menuCreateReadinessReport() {
 function menuCreateWarningTriageBoard() {
   const ui = SpreadsheetApp.getUi();
   try {
-    const result = createWarningTriageBoard();
+    const result = createWarningTriageBoard_();
     ui.alert(
       'Warning Triage Board Ready',
       'Created/updated "' + result.sheetName + '" with ' + result.warningCount + ' warning row(s).\n' +
@@ -282,7 +282,7 @@ function menuCreateWarningTriageBoard() {
 function menuPrepareUnmatchedReview() {
   const ui = SpreadsheetApp.getUi();
   try {
-    const result = prepare419AUnmatchedReviewSheet();
+    const result = prepare419AUnmatchedReviewSheet_();
     ui.alert(
       '419A Unmatched Review Ready',
       'Prepared "' + result.sheetName + '" with ' + result.reviewRows + ' review row(s).\n' +
@@ -297,7 +297,7 @@ function menuPrepareUnmatchedReview() {
 function menuCreatePilotTestLog() {
   const ui = SpreadsheetApp.getUi();
   try {
-    const result = createPilotTestLog();
+    const result = createPilotTestLog_();
     ui.alert(
       'Pilot Test Log Ready',
       'Created/updated "' + result.sheetName + '" with ' + result.templateRows + ' starter test row(s).',
@@ -430,7 +430,7 @@ function promptSetAppConfig() {
   );
   if (sheetName.getSelectedButton() !== ui.Button.OK) return;
 
-  setAppConfig(
+  setAppConfig_(
     spreadsheetId.getResponseText(),
     webAppUrl.getResponseText(),
     sheetName.getResponseText()
@@ -447,7 +447,7 @@ function promptSetWebAppBaseUrl() {
     ui.ButtonSet.OK_CANCEL
   );
   if (result.getSelectedButton() !== ui.Button.OK) return;
-  setWebAppBaseUrl(result.getResponseText());
+  setWebAppBaseUrl_(result.getResponseText());
   ui.alert('WEB_APP_BASE_URL saved.');
 }
 
@@ -1049,6 +1049,8 @@ function saveInventoryUpdates(payload) {
   }
   const auth = requireUpdateAuthorization_(payload);
 
+  return withInventoryMutationLock_(function () {
+
   const room = cleanString_(payload.room);
   const loc = cleanString_(payload.loc);
   if (!room || !loc) {
@@ -1073,6 +1075,7 @@ function saveInventoryUpdates(payload) {
   const actor = auth.user || getActiveUserEmail_();
   const timestamp = new Date();
   const auditEvents = [];
+  const validatedUpdates = [];
 
   payload.updates.forEach(function (update) {
     const rowNum = Number(update.sheetRow);
@@ -1110,10 +1113,12 @@ function saveInventoryUpdates(payload) {
     const newQtyText = cleanString_(qty);
     const changed = oldQtyText !== newQtyText || oldStatus !== status;
 
-    sheet.getRange(rowNum, map.qty + 1).setValue(qty);
-    sheet.getRange(rowNum, map.status + 1).setValue(status);
-    if (map.lastUpdated !== -1) sheet.getRange(rowNum, map.lastUpdated + 1).setValue(timestamp);
-    if (map.updatedBy !== -1) sheet.getRange(rowNum, map.updatedBy + 1).setValue(actor);
+    validatedUpdates.push({
+      rowNum: rowNum,
+      qty: qty,
+      status: status,
+      changed: changed
+    });
 
     if (changed) {
       auditEvents.push({
@@ -1135,18 +1140,30 @@ function saveInventoryUpdates(payload) {
     }
   });
 
+  const changedUpdates = validatedUpdates.filter(function (update) {
+    return update.changed;
+  });
+  changedUpdates.forEach(function (update) {
+    sheet.getRange(update.rowNum, map.qty + 1).setValue(update.qty);
+    sheet.getRange(update.rowNum, map.status + 1).setValue(update.status);
+    if (map.lastUpdated !== -1) sheet.getRange(update.rowNum, map.lastUpdated + 1).setValue(timestamp);
+    if (map.updatedBy !== -1) sheet.getRange(update.rowNum, map.updatedBy + 1).setValue(actor);
+  });
+
   appendAuditEvents_(auditEvents);
 
   const refreshedRows = getInventoryRowsForLocation_(room, loc);
   return {
     success: true,
-    updatedCount: payload.updates.length,
+    updatedCount: changedUpdates.length,
+    unchangedCount: validatedUpdates.length - changedUpdates.length,
     room: room,
     loc: loc,
     rows: refreshedRows,
     html: renderInventoryHtml_(refreshedRows, 'tech'),
     timestamp: new Date().toISOString()
   };
+  });
 }
 
 function addInventoryItemToLocation(payload) {
@@ -1154,6 +1171,8 @@ function addInventoryItemToLocation(payload) {
     throw new Error('Invalid add-item payload.');
   }
   const auth = requireUpdateAuthorization_(payload);
+
+  return withInventoryMutationLock_(function () {
 
   const room = cleanString_(payload.room);
   const loc = cleanString_(payload.loc);
@@ -1189,8 +1208,12 @@ function addInventoryItemToLocation(payload) {
 
   const actor = auth.user || getActiveUserEmail_();
   const timestamp = new Date();
+  const requestedItemId = cleanString_(item.itemId);
+  if (requestedItemId && inventoryItemIdExists_(values, map, requestedItemId)) {
+    throw new Error('Item ID already exists. Use a unique Item ID or leave it blank to generate one.');
+  }
   const newRow = buildNewInventoryRow_(values[0].length, map, context.row, {
-    itemId: cleanString_(item.itemId) || generateItemId_(room, loc, itemName),
+    itemId: requestedItemId || generateItemId_(room, loc, itemName),
     itemName: itemName,
     qty: qty,
     unit: cleanString_(item.unit),
@@ -1228,6 +1251,7 @@ function addInventoryItemToLocation(payload) {
     rows: getInventoryRowsForLocation_(room, loc),
     timestamp: new Date().toISOString()
   };
+  });
 }
 
 function removeInventoryItemFromLocation(payload) {
@@ -1235,6 +1259,8 @@ function removeInventoryItemFromLocation(payload) {
     throw new Error('Invalid remove-item payload.');
   }
   const auth = requireUpdateAuthorization_(payload);
+
+  return withInventoryMutationLock_(function () {
 
   const room = cleanString_(payload.room);
   const loc = cleanString_(payload.loc);
@@ -1293,6 +1319,28 @@ function removeInventoryItemFromLocation(payload) {
     rows: getInventoryRowsForLocation_(room, loc),
     timestamp: new Date().toISOString()
   };
+  });
+}
+
+function withInventoryMutationLock_(callback) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('Inventory is being updated by another user. Wait a moment, refresh, and try again.');
+  }
+  try {
+    return callback();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function inventoryItemIdExists_(values, map, itemId) {
+  const needle = normalizeIdentity_(itemId);
+  if (!needle) return false;
+  for (let i = 1; i < values.length; i++) {
+    if (normalizeIdentity_(values[i][map.itemId]) === needle) return true;
+  }
+  return false;
 }
 
 function getAllLocations() {
@@ -1591,7 +1639,9 @@ function generateItemId_(room, loc, itemName) {
   const base = [room, loc, itemName].map(function (part) {
     return cleanString_(part).toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }).filter(Boolean).join('-');
-  const suffix = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Etc/GMT', 'yyyyMMddHHmmss');
+  const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Etc/GMT', 'yyyyMMddHHmmss');
+  const randomSuffix = Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
+  const suffix = timestamp + '-' + randomSuffix;
   return (base || 'ITEM') + '-' + suffix;
 }
 
@@ -1636,7 +1686,7 @@ function buildInventoryRowView_(sourceRow, map, sheetRow, category, roomVal, loc
   };
 }
 
-function refreshQrLinks() {
+function refreshQrLinks_() {
   const sheet = getInventorySheet_();
   const lastRow = sheet.getLastRow();
   if (lastRow <= CONFIG.HEADER_ROW) {
@@ -1670,7 +1720,7 @@ function refreshQrLinks() {
   return { success: true, updatedRows: updatedRows, skippedRows: skippedRows, baseUrl: baseUrl };
 }
 
-function refreshQrImages() {
+function refreshQrImages_() {
   const sheet = getInventorySheet_();
   const lastRow = sheet.getLastRow();
   if (lastRow <= CONFIG.HEADER_ROW) return { success: true, updatedRows: 0 };
@@ -2051,7 +2101,7 @@ function getInventorySheetForPreparation_() {
   return ss.getSheetByName(targetName) || ss.insertSheet(targetName);
 }
 
-function buildStorageMasterSheet() {
+function buildStorageMasterSheet_() {
   const baseUrl = getWebAppBaseUrl_({ silent: true });
   const locations = getAllLocations_();
   const statsByKey = getLocationStatsByKey_();
@@ -2202,7 +2252,7 @@ function inferStorageType_(entry, stats) {
   return 'Storage';
 }
 
-function buildQrLabelSheet() {
+function buildQrLabelSheet_() {
   const baseUrl = getWebAppBaseUrl_();
   const locations = getAllLocations_();
   const statsByKey = getLocationStatsByKey_();
@@ -2281,7 +2331,7 @@ function buildQrLabelSheet() {
   return { success: true, sheetName: sheet.getName(), labelCount: output.length };
 }
 
-function createReadinessReport() {
+function createReadinessReport_() {
   const report = validateInventoryData_();
   const ss = getSpreadsheet_();
   const sheet = getOrCreateSheet_(ss, CONFIG.READINESS_REPORT_SHEET_NAME);
@@ -2334,11 +2384,11 @@ function createReadinessReport() {
   };
 }
 
-function createWarningTriageBoard() {
+function createWarningTriageBoard_() {
   const ss = getSpreadsheet_();
   let reportSheet = ss.getSheetByName(CONFIG.READINESS_REPORT_SHEET_NAME);
   if (!reportSheet) {
-    createReadinessReport();
+    createReadinessReport_();
     reportSheet = ss.getSheetByName(CONFIG.READINESS_REPORT_SHEET_NAME);
   }
   if (!reportSheet) throw new Error('Inventory_Readiness_Report could not be found or created.');
@@ -2422,7 +2472,7 @@ function createWarningTriageBoard() {
   return { success: true, sheetName: sheet.getName(), warningCount: output.length };
 }
 
-function prepare419AUnmatchedReviewSheet() {
+function prepare419AUnmatchedReviewSheet_() {
   const ss = getSpreadsheet_();
   const sheet = getOrCreateSheet_(ss, CONFIG.UNMATCHED_REVIEW_SHEET_NAME);
   const existing = sheet.getDataRange().getValues();
@@ -2494,7 +2544,7 @@ function prepare419AUnmatchedReviewSheet() {
   return { success: true, sheetName: sheet.getName(), reviewRows: rows.length };
 }
 
-function createPilotTestLog() {
+function createPilotTestLog_() {
   const ss = getSpreadsheet_();
   const sheet = getOrCreateSheet_(ss, CONFIG.PILOT_TEST_LOG_SHEET_NAME);
   const samples = pilotSampleRows_();
@@ -3256,7 +3306,7 @@ function extractSpreadsheetId_(input) {
   return match && match[1] ? match[1] : value;
 }
 
-function setAppConfig(spreadsheetId, webAppBaseUrl, inventorySheetName) {
+function setAppConfig_(spreadsheetId, webAppBaseUrl, inventorySheetName) {
   const props = PropertiesService.getScriptProperties();
   const nextSpreadsheetId = cleanString_(spreadsheetId);
   const nextWebAppBaseUrl = normalizeWebAppBaseUrl_(webAppBaseUrl);
@@ -3276,7 +3326,7 @@ function setAppConfig(spreadsheetId, webAppBaseUrl, inventorySheetName) {
   return getAppConfig_();
 }
 
-function setWebAppBaseUrl(url) {
+function setWebAppBaseUrl_(url) {
   const value = normalizeWebAppBaseUrl_(url);
   if (!value) throw new Error('Please provide a non-empty URL.');
   PropertiesService.getScriptProperties().setProperty(CONFIG.WEB_APP_URL_PROPERTY, value);

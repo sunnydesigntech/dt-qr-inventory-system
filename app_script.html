@@ -2258,7 +2258,10 @@
       .withSuccessHandler(function (res) {
         applyServerRows((res && res.rows) || []);
         saveState = 'saved';
-        saveMessage = 'Saved. Updated ' + ((res && res.updatedCount) || updates.length) + ' item(s) and recorded Audit_Log rows for actual changes.';
+        var updatedCount = res && Number.isFinite(Number(res.updatedCount)) ? Number(res.updatedCount) : updates.length;
+        saveMessage = updatedCount
+          ? 'Saved. Updated ' + updatedCount + ' item(s) and recorded Audit_Log rows for actual changes.'
+          : 'No live values changed. No Audit_Log row was added.';
         render();
       })
       .withFailureHandler(function (err) {

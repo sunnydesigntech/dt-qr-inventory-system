@@ -622,6 +622,8 @@ If the current local implementation does not include all fields exactly, adjust 
 
 Update Mode is now treated as a server-enforced safety gate, not just a UI route. Direct `?mode=tech` access can request the Update screen, but save/add/remove calls must be authorised by allowed active-user email/domain or a short-lived PIN token. Apps Script may not expose the active user email in every deployment mode, so PIN unlock remains the operational fallback. Production must configure authorization Script Properties before live mutation testing.
 
+Inventory mutations are serialized with an Apps Script lock. Multi-row saves validate every requested row and stale-row identity before the first write; unchanged values do not update metadata or create Audit_Log rows. Add-item rejects duplicate supplied Item IDs and generated IDs include a random suffix.
+
 ## 15. Roadmap
 
 ### Immediate Next Steps

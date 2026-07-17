@@ -308,6 +308,39 @@ assert.ok(
   'scanner admin route should return before reading Inventory dataset'
 );
 assert.match(codeGs, /route: \{ name: 'admin', admin: 'scanner' \}/);
+assert.match(codeGs, /function withInventoryMutationLock_/);
+assert.match(codeGs, /LockService\.getScriptLock\(\)/);
+assert.match(codeGs, /const validatedUpdates = \[\]/);
+assert.ok(
+  codeGs.indexOf('payload.updates.forEach(function (update)') < codeGs.indexOf('changedUpdates.forEach(function (update)'),
+  'all requested rows should be validated before any update write begins'
+);
+assert.match(codeGs, /updatedCount: changedUpdates\.length/);
+assert.match(codeGs, /unchangedCount: validatedUpdates\.length - changedUpdates\.length/);
+assert.match(codeGs, /function inventoryItemIdExists_/);
+assert.match(codeGs, /Item ID already exists/);
+assert.match(codeGs, /Utilities\.getUuid\(\).*slice\(0, 8\)/);
+[
+  'refreshQrLinks',
+  'refreshQrImages',
+  'buildStorageMasterSheet',
+  'buildQrLabelSheet',
+  'createReadinessReport',
+  'createWarningTriageBoard',
+  'prepare419AUnmatchedReviewSheet',
+  'createPilotTestLog',
+  'setAppConfig',
+  'setWebAppBaseUrl'
+].forEach((name) => {
+  assert.doesNotMatch(codeGs, new RegExp('function\\s+' + name + '\\s*\\('), name + ' must not be callable through google.script.run');
+  assert.match(codeGs, new RegExp('function\\s+' + name + '_\\s*\\('), name + ' should remain available as a private server helper');
+});
+
+const previewBuilder = readFileSync(new URL('./build-preview.mjs', import.meta.url), 'utf8');
+assert.match(previewBuilder, /--route=landing/);
+assert.match(previewBuilder, /location: \{ name: 'location', mode: 'view', locKey:/);
+assert.match(previewBuilder, /update: \{ name: 'location', mode: 'tech', locKey:/);
+assert.match(previewBuilder, /labels: \{ name: 'labels' \}/);
 
 const rows = [
   { itemId: '', itemName: '', category: 'Storage', remarks: 'Placeholder row for QR/location page', isPlaceholder: 'TRUE' },

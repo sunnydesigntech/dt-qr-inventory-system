@@ -145,6 +145,27 @@ const bootstrap = {
   }
 };
 
+const routeName = (process.argv.find((arg) => arg.startsWith('--route=')) || '--route=landing').split('=')[1];
+const outputName = (process.argv.find((arg) => arg.startsWith('--output=')) || '--output=preview.html').split('=')[1];
+const routeMap = {
+  landing: { name: 'landing' },
+  location: { name: 'location', mode: 'view', locKey: bootstrap.appData.locations[0].key },
+  update: { name: 'location', mode: 'tech', locKey: bootstrap.appData.locations[0].key },
+  empty: { name: 'location', mode: 'view', locKey: bootstrap.appData.locations[1].key },
+  diagnostics: { name: 'admin', admin: 'diagnostics' },
+  readiness: { name: 'admin', admin: 'readiness' },
+  labels: { name: 'labels' },
+  scanner: { name: 'admin', admin: 'scanner' }
+};
+
+if (!routeMap[routeName]) {
+  throw new Error('Unknown preview route "' + routeName + '". Use: ' + Object.keys(routeMap).join(', '));
+}
+if (path.basename(outputName) !== outputName || !outputName.endsWith('.html')) {
+  throw new Error('Preview output must be an .html filename in the repository root.');
+}
+bootstrap.route = routeMap[routeName];
+
 function read(name) {
   return fs.readFileSync(path.join(root, name), 'utf8');
 }
@@ -154,5 +175,5 @@ const html = read('index.html')
   .replace('<?!= bootstrapJson ?>', JSON.stringify(bootstrap).replace(/</g, '\\u003c'))
   .replace("<?!= include('app_script'); ?>", read('app_script.html'));
 
-fs.writeFileSync(path.join(root, 'preview.html'), html);
-console.log('Wrote preview.html');
+fs.writeFileSync(path.join(root, outputName), html);
+console.log('Wrote ' + outputName + ' (' + routeName + ')');

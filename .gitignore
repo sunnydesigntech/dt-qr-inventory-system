@@ -3,6 +3,7 @@ node_modules/
 .DS_Store
 .clasp.json
 preview.html
+preview-*.html
 *.xlsx
 outputs/
 prototype/

@@ -96,7 +96,7 @@ Update Mode authorization:
 - `UPDATE_MODE_PIN_SALT`: salt used when hashing the PIN.
 - `UPDATE_AUTH_DISABLED`: explicit development-only escape hatch. Leave unset in production.
 
-Set these from the spreadsheet menu: `D&T Inventory` -> `Set App Config`, or use Apps Script project settings.
+Set spreadsheet and web-app routing from `D&T Inventory` -> `Set App Config`. Configure the Update authorization properties separately in the standalone web app's Apps Script project settings; the menu does not ask for or display PIN/security values.
 
 If `WEB_APP_BASE_URL` is not configured, the deployed web app now tries `ScriptApp.getService().getUrl()` as a runtime fallback before disabling QR/external shortcuts. Keep the Script Property set in production anyway so generated QR links and Sheet-side tools are explicit and stable.
 
@@ -127,6 +127,17 @@ node scripts/build-preview.mjs
 ```
 
 Then open `preview.html` in a browser. Do not open `app_script.html` directly; it is an Apps Script include fragment and needs the `index.html` shell plus bootstrap data.
+
+Generate focused previews for operational screens when changing UI code:
+
+```sh
+node scripts/build-preview.mjs --route=location --output=preview-location.html
+node scripts/build-preview.mjs --route=update --output=preview-update.html
+node scripts/build-preview.mjs --route=labels --output=preview-labels.html
+node scripts/build-preview.mjs --route=diagnostics --output=preview-diagnostics.html
+```
+
+Generated-sheet builders and configuration setters in `code.gs` are private server helpers. The spreadsheet menu calls them through its UI wrappers, but browser clients cannot invoke them directly with `google.script.run`. Inventory save/add/remove remain the only browser-callable write operations and require server-side Update authorization.
 
 Confirm only intended Apps Script runtime files are tracked for push:
 
@@ -443,6 +454,14 @@ Post-deploy smoke tests:
 
 ## Release Log
 
+### 2026-07-17 14:45 HKT
+
+- Version: `@50`
+- Deployment ID: `<YOUR_DEPLOYMENT_ID>`
+- Deployment URL: `https://script.google.com/macros/s/<YOUR_DEPLOYMENT_ID>/exec`
+- Summary: hardened live inventory mutations with a script lock, validate-before-write multi-row saves, accurate no-op handling, unique generated Item IDs, duplicate supplied Item ID rejection, and private generated-sheet/configuration helpers. Expanded local previews now cover location, Update, labels, diagnostics, readiness, scanner, and empty-storage routes.
+- Rollback note: version `@49` remains the scanner frame redirect fallback.
+
 ### 2026-05-11 11:21 HKT
 
 - Version: @49
@@ -714,4 +733,4 @@ Post-deploy smoke tests:
 
 ## Rollback
 
-Use Apps Script deployment history to redeploy an earlier version if a rollout has an issue. The previous live deployment before this pass was version `@10`.
+Use Apps Script deployment history to redeploy an earlier version if a rollout has an issue. The previous live deployment before this pass was version `@49`.
